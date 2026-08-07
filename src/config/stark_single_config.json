@@ -1,0 +1,61 @@
+{
+  "can": {
+    "interface": "can0",
+    "arbitration_rate": 1000000,
+    "data_rate": 5000000
+  },
+  "motors": [
+    {
+      "id": 1,
+      "name": "left_hip",
+      "heartbeat_ms": 0,
+      "profile_accel": 500,
+      "profile_decel": 500,
+      "profile_velocity": 20,
+      "disable_watchdog": true,
+      "auto_enable": false,
+      "tpdo_sync_count": 1
+    }
+  ],
+  "shm": {
+    "name": "/stark_shm",
+    "size_kb": 64
+  },
+  "rt": {
+    "control_priority": 90,
+    "control_period_us": 1000,
+    "report_divider": 5,
+    "cpu_affinity": [3]
+  },
+  "calib": {
+    "auto_calib": true,
+    "timeout_ms": 10000,
+    "threshold_deg": 1.0
+  },
+  "imu": {
+    "i2c_dev": "/dev/i2c-3",
+    "gpio_chip": "gpiochip4",
+    "gpio_line": 6,
+    "op_mode": 7
+  },
+  "report": {
+    "auto_enable": true,
+    "period_ms": 5
+  },
+  "sensor": {
+    "period_div": 400,
+    "bus_format": 3,
+    "mode": 2,
+    "force_module": 1
+  },
+  "ros": {
+    "enabled": false,
+    "feedback_topic": "/stark/motor/feedback",
+    "state_topic": "/stark/motor/state",
+    "ctrl_sub_topic": "/stark/motor/ctrl"
+  },
+  "web": {
+    "enabled": false,
+    "port": 8080
+  }
+}

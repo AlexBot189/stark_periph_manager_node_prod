@@ -1,0 +1,1724 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="version" content="2.5.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>stark_node Debug Tool v2.5.0</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;color:#334155;min-height:100vh;overflow:hidden}
+
+/* header */
+.header{background:linear-gradient(135deg,#0284c7,#0ea5e9);padding:6px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-height:44px;box-shadow:0 1px 4px rgba(2,132,199,0.25)}
+.header .title{font-size:1.15em;font-weight:700;color:#fff;white-space:nowrap}
+.header .conn-group{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.header input{background:rgba(255,255,255,0.92);border:1px solid #7dd3fc;color:#0f172a;padding:4px 7px;border-radius:4px;font-size:0.82em;width:105px}
+.header button{background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.5);padding:4px 12px;border-radius:4px;cursor:pointer;font-size:0.82em;white-space:nowrap;font-weight:600}
+.header button:hover{background:rgba(255,255,255,0.35)}
+.header button.connected{background:#22c55e;border-color:#22c55e;color:#fff}
+.header button.disconnected{background:rgba(255,255,255,0.18);border-color:#ef4444;color:#ef4444}
+.header .status{font-size:0.82em;white-space:nowrap;color:#e0f2fe}
+
+/* main layout */
+.main{display:flex;gap:8px;padding:6px;height:calc(100vh - 100px)}
+
+/* left sidebar: toggles + controls */
+.sidebar{width:285px;min-width:285px;flex-shrink:0;background:#fff;border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:3px;overflow-y:auto;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.sidebar h3{color:#0284c7;font-size:0.85em;margin:6px 0 2px;font-weight:700}
+.sidebar h4{color:#64748b;font-size:0.75em;margin:4px 0 1px;font-weight:600;border-bottom:1px solid #e2e8f0;padding-bottom:2px}
+.sidebar label.tog{display:flex;align-items:center;gap:5px;font-size:0.73em;color:#475569;cursor:pointer;padding:2px 4px;border-radius:3px;user-select:none}
+.sidebar label.tog:hover{background:#f0f9ff}
+.sidebar label.tog input[type=checkbox]{accent-color:#0ea5e9;width:13px;height:13px}
+.sidebar label.cb{margin-right:0}
+.sidebar select,.sidebar input[type=number]{width:100%;background:#f8fafc;border:1px solid #cbd5e1;color:#0f172a;padding:5px;border-radius:4px;font-size:0.8em}
+.sidebar select:focus,.sidebar input:focus{outline:none;border-color:#0ea5e9;box-shadow:0 0 0 2px rgba(14,165,233,0.2)}
+.sidebar button{width:100%;background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd;padding:5px;border-radius:4px;cursor:pointer;font-size:0.8em;margin-top:1px;font-weight:600}
+.sidebar button:hover{background:#e0f2fe}
+.sidebar button.calib{background:#fffbeb;border-color:#fcd34d;color:#b45309}
+.sidebar button.calib:hover{background:#fef3c7}
+.sidebar button.danger{background:#fef2f2;border-color:#fecaca;color:#dc2626}
+.sidebar button.small{width:auto;padding:3px 8px;font-size:0.72em}
+.sidebar .row2{display:flex;gap:4px;align-items:center}
+.sidebar .row2 input{flex:1;min-width:0}
+.sidebar .row2 span{font-size:0.7em;color:#94a3b8;white-space:nowrap}
+.sidebar .row2 label{font-size:0.68em;color:#64748b;white-space:nowrap}
+.sidebar .hl{height:1px;background:#e2e8f0;margin:2px 0}
+
+/* right */
+.right-panel{flex:1;display:flex;flex-direction:column;min-width:0;gap:6px}
+
+/* chart */
+.chart-box{flex:1;background:#fff;border-radius:8px;padding:4px 6px 6px 6px;position:relative;display:flex;flex-direction:column;min-height:280px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.chart-box canvas{width:100%!important;height:100%!important}
+.chart-box .pause-tag{position:absolute;top:8px;right:10px;z-index:10;background:#fef2f2;color:#dc2626;font-size:0.65em;font-weight:700;padding:2px 8px;border-radius:3px;border:1px solid #fecaca;display:none;pointer-events:none}
+.chart-box.paused .pause-tag{display:block}
+
+/* bottom row: fault + log */
+.bottom-row{display:flex;gap:6px;height:120px;min-height:100px;flex-shrink:0}
+.fault-box{width:280px;min-width:260px;background:#fff;border-radius:8px;padding:8px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.06);display:flex;flex-direction:column;gap:3px;overflow-y:auto}
+.fault-box h4{color:#0284c7;font-size:0.75em;font-weight:700}
+.fault-row{display:flex;align-items:center;gap:6px;padding:2px 6px;background:#f8fafc;border-radius:4px;border:1px solid #e2e8f0}
+.fault-row .label{font-size:0.68em;color:#64748b;font-weight:600;min-width:55px}
+.fault-row .value{font-size:0.8em;font-weight:700;font-family:'SF Mono','Cascadia Code','Consolas',monospace}
+.fault-row .value.ok{color:#16a34a}
+.fault-row .value.err{color:#dc2626}
+
+.data-log{flex:1;background:#fff;border-radius:8px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.06);display:flex;flex-direction:column;overflow:hidden}
+.data-log .log-header{display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc;flex-shrink:0}
+.data-log .log-header h4{color:#0284c7;font-size:0.75em;font-weight:700}
+.data-log .log-header button{background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd;padding:1px 8px;border-radius:3px;cursor:pointer;font-size:0.68em;font-weight:600}
+.data-log .log-body{flex:1;overflow-y:auto;padding:3px 6px;font-family:'SF Mono','Cascadia Code','Consolas',monospace;font-size:0.68em;line-height:1.55;color:#475569}
+
+/* footer */
+.footer{background:#fff;padding:4px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #e2e8f0;min-height:38px;box-shadow:0 -1px 3px rgba(0,0,0,0.04)}
+.footer button{background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd;padding:4px 14px;border-radius:4px;cursor:pointer;font-size:0.82em;font-weight:600}
+.footer button:hover{background:#e0f2fe}
+.footer button.push-on{background:#f0fdf4;border-color:#86efac;color:#15803d}
+.footer button.push-off{background:#fef2f2;border-color:#fecaca;color:#dc2626}
+.footer button.save{background:#fffbeb;border-color:#fcd34d;color:#b45309}
+.footer .info{font-size:0.78em;color:#94a3b8;margin-left:auto}
+
+/* legend colors inline */
+.legend-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:2px;vertical-align:middle}
+
+/* chart-wrap (Canvas2D) */
+.chart-wrap{display:flex;gap:0;overflow:hidden;height:100%}
+.chart-yaxis{display:flex;flex-direction:column;justify-content:space-around;padding:8px 8px 8px 0;min-width:90px;font-size:11px;flex-shrink:0;overflow-y:auto}
+.chart-yaxis label{display:flex;align-items:flex-start;gap:4px;cursor:pointer;white-space:normal;line-height:1.25}
+.chart-yaxis input[type=checkbox]{margin:0;flex-shrink:0}
+.chart-yaxis .ydot{margin-top:2px;flex-shrink:0}
+.chart-label-unit{font-size:10px;color:#999}
+.ydot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.chart-area{position:relative;flex:1;background:#fff;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;min-height:350px}
+.chart-area canvas{width:100%;height:100%}
+
+/* tab bar */
+.tab-bar{display:flex;gap:0;background:#fff;padding:0 14px;border-bottom:2px solid #e2e8f0}
+.tab-bar button{background:none;border:none;padding:9px 22px;font-size:0.88em;font-weight:600;color:#94a3b8;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all 0.2s}
+.tab-bar button:hover{color:#0284c7}
+.tab-bar button.active{color:#0284c7;border-bottom-color:#0ea5e9}
+
+/* perf panel */
+.perf-panel{display:none;flex-direction:column;gap:10px;padding:10px 14px;height:calc(100vh - 152px);overflow-y:auto}
+.perf-panel.show{display:flex}
+
+/* status bar */
+.perf-statusbar{display:flex;align-items:center;gap:16px;background:#f8fafc;border-radius:10px;padding:10px 16px;border:1px solid #e2e8f0;flex-wrap:wrap}
+.perf-status-item{display:flex;align-items:center;gap:6px}
+.ps-label{font-size:0.75em;color:#94a3b8;font-weight:600}
+.ps-value{font-size:1.05em;font-weight:700;color:#0f172a;font-family:'SF Mono','Cascadia Code','Consolas',monospace}
+.ps-value.sched_fifo{color:#16a34a}
+.ps-value.sched_other{color:#f59e0b}
+.perf-clear-btn{background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:4px 14px;border-radius:4px;cursor:pointer;font-size:0.75em;font-weight:600;margin-left:auto}
+.perf-clear-btn:hover{background:#fee2e2}
+
+/* latency tables */
+.perf-latency-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.perf-lat-table{background:#fff;border-radius:10px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.06);overflow:hidden}
+.plt-header{background:#f1f5f9;padding:8px 14px;font-size:0.78em;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0}
+.plt-row{display:flex;align-items:center;padding:10px 14px;border-bottom:1px solid #f1f5f9;gap:10px}
+.plt-row:last-child{border-bottom:none}
+.plt-row.empty{padding:0;min-height:53px}
+.plt-k{width:36px;font-size:0.72em;color:#94a3b8;font-weight:600;text-align:right}
+.plt-v{flex:1;font-size:1.5em;font-weight:700;color:#0f172a;font-family:'SF Mono','Cascadia Code','Consolas',monospace;text-align:center}
+.plt-u{width:24px;font-size:0.7em;color:#94a3b8}
+.perf-chart-box{background:#fff;border-radius:10px;padding:12px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.perf-chart-box h4{color:#0284c7;font-size:0.78em;font-weight:700;margin-bottom:8px}
+.perf-chart-box canvas{width:100%;height:130px}
+.perf-summary{display:flex;gap:20px;padding:8px 0;font-size:0.7em;color:#64748b}
+.perf-summary span{white-space:nowrap}
+</style>
+
+<style>
+/* battery panel styles */
+.batt-panel{display:none;flex-direction:column;gap:10px;padding:10px 14px;height:calc(100vh - 152px);overflow-y:auto}
+.batt-panel.show{display:flex}
+
+.batt-statusbar{display:grid;grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));gap:8px}
+.batt-card{background:#fff;border-radius:10px;padding:10px 14px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.batt-card .blabel{font-size:0.7em;color:#94a3b8;font-weight:600}
+.batt-card .bvalue{font-size:1.25em;font-weight:700;color:#0f172a;font-family:'SF Mono','Cascadia Code','Consolas',monospace}
+.batt-card .bunit{font-size:0.65em;color:#94a3b8;margin-left:2px}
+.batt-card.warn .bvalue{color:#f59e0b}
+.batt-card.err .bvalue{color:#dc2626}
+
+.batt-cells{display:grid;grid-template-columns:repeat(6, 1fr);gap:6px}
+.batt-cell{background:#f8fafc;border-radius:8px;padding:8px 6px;text-align:center;border:1px solid #e2e8f0}
+.batt-cell .cnum{font-size:0.65em;color:#94a3b8}
+.batt-cell .cval{font-size:0.95em;font-weight:700;color:#0f172a;font-family:monospace}
+
+.batt-fault-row{display:flex;align-items:center;gap:6px;padding:3px 8px;background:#f8fafc;border-radius:4px;border:1px solid #e2e8f0;font-size:0.72em}
+.batt-fault-row .flbl{color:#64748b;min-width:80px;font-weight:600}
+.batt-fault-row .fval{font-family:monospace;font-weight:700}
+.batt-fault-row .fval.ok{color:#16a34a}
+.batt-fault-row .fval.err{color:#dc2626}
+
+.batt-ctrl{display:grid;grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));gap:8px}
+.batt-ctrl-group{background:#fff;border-radius:10px;padding:10px 14px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.batt-ctrl-group h4{color:#0284c7;font-size:0.78em;font-weight:700;margin-bottom:6px}
+.batt-ctrl-group select,.batt-ctrl-group input{width:100%;background:#f8fafc;border:1px solid #cbd5e1;color:#0f172a;padding:5px;border-radius:4px;font-size:0.78em;margin-bottom:4px}
+.batt-ctrl-group button{width:100%;background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd;padding:5px;border-radius:4px;cursor:pointer;font-size:0.78em;font-weight:600}
+.batt-ctrl-group button:hover{background:#e0f2fe}
+.batt-ctrl-group button.danger{background:#fef2f2;border-color:#fecaca;color:#dc2626}
+.batt-ctrl-group button.danger:hover{background:#fee2e2}
+
+.batt-placeholder{background:#f8fafc;border:2px dashed #cbd5e1;border-radius:10px;padding:20px;text-align:center;color:#94a3b8;font-size:0.8em}
+.batt-placeholder h4{color:#64748b;font-weight:600;margin-bottom:4px}
+
+.batt-conn-row{display:flex;align-items:center;gap:6px;background:#f8fafc;border-radius:8px;padding:6px 10px;border:1px solid #e2e8f0}
+.batt-conn-row input{background:#fff;border:1px solid #cbd5e1;padding:4px 7px;border-radius:3px;font-size:0.75em;width:90px}
+.batt-conn-row button{background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:0.75em;font-weight:600}
+.batt-conn-row button.connected{background:#22c55e;border-color:#22c55e;color:#fff}
+.batt-conn-row .status{font-size:0.72em;color:#94a3b8}
+</style>
+
+</head>
+<body>
+
+<div class="header">
+  <span class="title">stark_node 调试工具 <span style="font-size:0.62em;opacity:0.75;">v2.5.0</span></span>
+  <div class="conn-group">
+    <input type="text" id="ws_ip" value="192.168.0.121" placeholder="IP">
+    <input type="number" id="ws_port" value="8080" placeholder="端口" style="width:65px">
+    <button id="btn_conn" onclick="connectWS()">连接</button>
+    <button id="btn_disc" onclick="disconnectWS()" class="disconnected" style="display:none">断开</button>
+    <span class="status" id="conn_status">未连接</span>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <button id="tab_chart" class="active" onclick="onSwitchTab('chart')">📊 数据监控</button>
+  <button id="tab_perf" onclick="onSwitchTab('perf')">⚡ 性能监控</button>
+  <button id="tab_batt" onclick="onSwitchTab('batt')">🔋 电池监控</button>
+</div>
+
+<div class="main" id="panel_chart">
+  <!-- LEFT: series toggles + controls -->
+  <div class="sidebar">
+    <h3>🎮 单帧控制</h3>
+    <div class="row2">
+      <select id="ctrl_motor" style="flex:1">
+        <option value="1">右髋 (ID=1)</option>
+        <option value="2">左髋 (ID=2)</option>
+        <option value="3" selected>双电机 (1+2)</option>
+      </select>
+      <select id="ctrl_mode" style="flex:1" onchange="onModeChange()">
+        <option value="pdo" selected>PDO</option>
+        <option value="sdo">SDO</option>
+        <option value="cansend">cansend</option>
+      </select>
+    </div>
+
+    <!-- PDO/SDO 输入区 -->
+    <div id="ctrl_panel_pdosdo">
+    <h4>电流 (mA)</h4>
+    <div class="row2">
+      <label>右:</label><input type="number" id="val_cur_m1" value="500" step="10" placeholder="M1 mA">
+      <label>左:</label><input type="number" id="val_cur_m2" value="500" step="10" placeholder="M2 mA">
+      <button class="small" onclick="sendCtrl('cur')">发送</button>
+    </div>
+
+    <h4>位置 (°)</h4>
+    <div class="row2">
+      <label>右:</label><input type="number" id="val_pos_m1" value="30" step="0.5" placeholder="M1 °">
+      <label>左:</label><input type="number" id="val_pos_m2" value="30" step="0.5" placeholder="M2 °">
+    </div>
+    <div class="row2">
+      <span>acc</span><input type="number" id="val_pos_acc" value="500" step="10" placeholder="acc">
+      <span>vel</span><input type="number" id="val_pos_vel" value="10" step="1" placeholder="vel">
+      <button class="small" onclick="sendCtrl('pos')">发送</button>
+    </div>
+
+    <h4>速度 (RPM)</h4>
+    <div class="row2">
+      <label>右:</label><input type="number" id="val_vel_m1" value="10" step="1" placeholder="M1 RPM">
+      <label>左:</label><input type="number" id="val_vel_m2" value="10" step="1" placeholder="M2 RPM">
+    </div>
+    <div class="row2">
+      <span>acc</span><input type="number" id="val_vel_acc" value="500" step="10" placeholder="acc">
+      <button class="small" onclick="sendCtrl('vel')">发送</button>
+    </div>
+    </div>
+
+    <!-- cansend 输入区 (默认隐藏) -->
+    <div id="ctrl_panel_cansend" style="display:none">
+    <div class="row2">
+      <label>接口</label>
+      <select id="cansend_iface" style="flex:1">
+        <option value="can0" selected>can0</option>
+        <option value="can1">can1</option>
+      </select>
+    </div>
+    <div class="row2">
+      <label>ID</label>
+      <input type="text" id="cansend_id" value="601" placeholder="hex: 601" style="flex:1;font-family:monospace">
+      <span id="cansend_type" style="font-size:0.68em;color:#0ea5e9;font-weight:600">CAN</span>
+    </div>
+    <div class="row2">
+      <label>数据</label>
+      <input type="text" id="cansend_data" value="2B4010000F000000" placeholder="hex" style="flex:1;font-family:monospace" oninput="onCansendDataInput()">
+    </div>
+    <button onclick="sendCansend()" style="width:100%;background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd;padding:6px;border-radius:4px;cursor:pointer;font-size:0.82em;font-weight:700;margin-top:4px">🚀 发送 CAN 帧</button>
+    </div>
+
+    <div class="hl"></div>
+    <h3>⚙️ 管理</h3>
+    <div class="row2">
+      <select id="mgmt_motor" style="flex:1">
+        <option value="1">右髋 (ID=1)</option>
+        <option value="2">左髋 (ID=2)</option>
+        <option value="3" selected>双电机 (1+2)</option>
+      </select>
+    </div>
+    <button onclick="sendMgmt('disable')" class="danger" style="width:100%;padding:8px;font-size:0.9em;font-weight:700;margin:2px 0">⛔ 失能</button>
+    <div class="row2">
+      <button onclick="sendMgmt('enable')" class="small" style="flex:1;background:#f0fdf4;border-color:#86efac;color:#15803d;padding:6px;font-weight:700">使能</button>
+      <button onclick="sendMgmt('calib')" class="small calib" style="flex:1;padding:6px;font-weight:700">校准</button>
+      <button onclick="sendMgmt('clearf')" class="small" style="flex:1;padding:6px">清故障</button>
+    </div>
+
+    <div class="hl"></div>
+    <h3>🔧 力矩标定</h3>
+    <span style="font-size:0.65em;color:#94a3b8">⚠ 失能、关节静止、挂好负载后再执行</span>
+    <select id="tq_motor" style="width:100%;margin:3px 0">
+      <option value="1">右髋 (ID=1)</option>
+      <option value="2">左髋 (ID=2)</option>
+    </select>
+    <div class="row2">
+      <input type="number" id="tq_nm" value="0" step="0.1" placeholder="Nm" style="flex:1">
+      <button onclick="sendCalibTorque()" class="small calib" style="flex:1;padding:6px;font-weight:700">标定</button>
+    </div>
+    <button onclick="sendCalibTorqueZero()" class="small" style="width:100%;padding:6px;margin-top:4px;font-weight:700;background:#f0fdf4;border-color:#86efac;color:#15803d">零漂标定 (理论力矩=0)</button>
+
+    <div class="hl"></div>
+    <h3>⚙ MIT 缩放迁移</h3>
+    <span style="font-size:0.65em;color:#94a3b8">⚠ 失能状态下执行, 写 Tmax=20Nm 并保存 Flash, 需重启验证</span>
+    <select id="mig_motor" style="width:100%;margin:3px 0">
+      <option value="1">右髋 (ID=1)</option>
+      <option value="2">左髋 (ID=2)</option>
+    </select>
+    <button onclick="sendMitMigrate()" class="small" style="width:100%;padding:6px;font-weight:700;background:#fffbeb;border-color:#fcd34d;color:#b45309">迁移 Tmax=20Nm + 保存Flash</button>
+
+    <div class="hl"></div>
+    <h3>💡 LED</h3>
+    <div class="row2">
+      <select id="led_motor" style="flex:1">
+        <option value="1">右髋 (ID=1)</option>
+        <option value="2">左髋 (ID=2)</option>
+      </select>
+      <select id="led_mode" style="flex:1">
+        <option value="0">常亮</option>
+        <option value="1">闪烁</option>
+        <option value="2">呼吸</option>
+        <option value="3">流水</option>
+      </select>
+    </div>
+    <div class="row2">
+      <label>Mask</label><input type="number" id="led_mask" value="240" placeholder="0xF0">
+      <span>RGB</span>
+      <input type="number" id="led_r" value="255" min="0" max="255" style="width:42px">
+      <input type="number" id="led_g" value="0" min="0" max="255" style="width:42px">
+      <input type="number" id="led_b" value="0" min="0" max="255" style="width:42px">
+    </div>
+    <button class="small" onclick="sendLED()" style="width:100%">发送 LED</button>
+
+    <div class="hl"></div>
+    <div class="row2" style="justify-content:space-between">
+      <span style="font-size:0.8em;font-weight:600">🔘 按键: </span>
+      <span id="btn_status" style="font-size:0.85em;font-weight:700">--</span>
+      <button class="small" onclick="readBtn()">刷新</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: chart + bottom row -->
+  <div class="right-panel">
+    <div class="chart-box" id="chart_box">
+      <span class="pause-tag">暂停</span>
+      <div class="chart-wrap">
+        <div class="chart-yaxis" id="chartYAxis">
+          <label style="color:#22c55e"><span class="ydot" style="background:#22c55e"></span><span>右位置<br><span class="chart-label-unit">(°)</span></span><input type="checkbox" data-key="pos1" checked></label>
+          <label style="color:#ef4444"><span class="ydot" style="background:#ef4444"></span><span>左位置<br><span class="chart-label-unit">(°)</span></span><input type="checkbox" data-key="pos2" checked></label>
+          <label style="color:#0ea5e9"><span class="ydot" style="background:#0ea5e9"></span><span>右电流<br><span class="chart-label-unit">(A)</span></span><input type="checkbox" data-key="cur1" checked></label>
+          <label style="color:#f97316"><span class="ydot" style="background:#f97316"></span><span>左电流<br><span class="chart-label-unit">(A)</span></span><input type="checkbox" data-key="cur2" checked></label>
+          <label style="color:#8b5cf6"><span class="ydot" style="background:#8b5cf6"></span><span>右速度<br><span class="chart-label-unit">(RPM)</span></span><input type="checkbox" data-key="vel1"></label>
+          <label style="color:#ec4899"><span class="ydot" style="background:#ec4899"></span><span>左速度<br><span class="chart-label-unit">(RPM)</span></span><input type="checkbox" data-key="vel2"></label>
+          <label style="color:#14b8a6"><span class="ydot" style="background:#14b8a6"></span><span>右力矩<br><span class="chart-label-unit">(N.m)</span></span><input type="checkbox" data-key="spi_tq1"></label>
+          <label style="color:#f43f5e"><span class="ydot" style="background:#f43f5e"></span><span>左力矩<br><span class="chart-label-unit">(N.m)</span></span><input type="checkbox" data-key="spi_tq2"></label>
+          <label style="color:#06b6d4"><span class="ydot" style="background:#06b6d4"></span><span>横滚<br><span class="chart-label-unit">(°)</span></span><input type="checkbox" data-key="imu_r" checked></label>
+          <label style="color:#d946ef"><span class="ydot" style="background:#d946ef"></span><span>俯仰<br><span class="chart-label-unit">(°)</span></span><input type="checkbox" data-key="imu_p" checked></label>
+          <label style="color:#eab308"><span class="ydot" style="background:#eab308"></span><span>偏航<br><span class="chart-label-unit">(°)</span></span><input type="checkbox" data-key="imu_y" checked></label>
+          <label style="color:#0ea5e9"><span class="ydot" style="background:#0ea5e9;opacity:0.45"></span><span>右电流指令<br><span class="chart-label-unit">(A)</span></span><input type="checkbox" data-key="c_cur1"></label>
+          <label style="color:#f97316"><span class="ydot" style="background:#f97316;opacity:0.45"></span><span>左电流指令<br><span class="chart-label-unit">(A)</span></span><input type="checkbox" data-key="c_cur2"></label>
+          <label style="color:#22c55e"><span class="ydot" style="background:#22c55e;opacity:0.45"></span><span>右位置指令<br><span class="chart-label-unit">(°)</span></span><input type="checkbox" data-key="c_pos1"></label>
+          <label style="color:#ef4444"><span class="ydot" style="background:#ef4444;opacity:0.45"></span><span>左位置指令<br><span class="chart-label-unit">(°)</span></span><input type="checkbox" data-key="c_pos2"></label>
+          <label style="color:#8b5cf6"><span class="ydot" style="background:#8b5cf6;opacity:0.45"></span><span>右速度指令<br><span class="chart-label-unit">(RPM)</span></span><input type="checkbox" data-key="c_vel1"></label>
+          <label style="color:#ec4899"><span class="ydot" style="background:#ec4899;opacity:0.45"></span><span>左速度指令<br><span class="chart-label-unit">(RPM)</span></span><input type="checkbox" data-key="c_vel2"></label>
+          <label style="color:#14b8a6"><span class="ydot" style="background:#14b8a6;opacity:0.45"></span><span>右力矩指令<br><span class="chart-label-unit">(0.05N.m)</span></span><input type="checkbox" data-key="c_tq1"></label>
+          <label style="color:#f43f5e"><span class="ydot" style="background:#f43f5e;opacity:0.45"></span><span>左力矩指令<br><span class="chart-label-unit">(0.05N.m)</span></span><input type="checkbox" data-key="c_tq2"></label>
+          <label style="color:#84cc16"><span class="ydot" style="background:#84cc16"></span><span>左前掌<br><span class="chart-label-unit">(AD)</span></span><input type="checkbox" data-key="foot_l1"></label>
+          <label style="color:#a3e635"><span class="ydot" style="background:#a3e635"></span><span>左足弓<br><span class="chart-label-unit">(AD)</span></span><input type="checkbox" data-key="foot_l2"></label>
+          <label style="color:#bef264"><span class="ydot" style="background:#bef264"></span><span>左后跟<br><span class="chart-label-unit">(AD)</span></span><input type="checkbox" data-key="foot_l3"></label>
+          <label style="color:#fbbf24"><span class="ydot" style="background:#fbbf24"></span><span>右前掌<br><span class="chart-label-unit">(AD)</span></span><input type="checkbox" data-key="foot_r1"></label>
+          <label style="color:#f59e0b"><span class="ydot" style="background:#f59e0b"></span><span>右足弓<br><span class="chart-label-unit">(AD)</span></span><input type="checkbox" data-key="foot_r2"></label>
+          <label style="color:#d97706"><span class="ydot" style="background:#d97706"></span><span>右后跟<br><span class="chart-label-unit">(AD)</span></span><input type="checkbox" data-key="foot_r3"></label>
+        </div>
+        <div class="chart-area"><canvas id="main_chart"></canvas></div>
+      </div>
+      <div style="margin-top:4px;display:flex;gap:8px;">
+        <button id="chartPauseBtn" class="btn btn-sm btn-secondary" style="font-size:0.7em;padding:2px 10px;">⏸️ 暂停</button>
+        <button id="chartExportBtn" class="btn btn-sm btn-info" style="font-size:0.7em;padding:2px 10px;">📥 导出CSV</button>
+      </div>
+    </div>
+
+    <div class="bottom-row">
+      <div class="fault-box" id="fault_panel">
+        <h4>故障</h4>
+        <div class="fault-row"><span class="label">右-温度</span><span class="value ok" id="f_m1_temp">-</span></div>
+        <div class="fault-row"><span class="label">右-故障码</span><span class="value ok" id="f_m1_fault">0</span></div>
+        <div class="fault-row"><span class="label">左-温度</span><span class="value ok" id="f_m2_temp">-</span></div>
+        <div class="fault-row"><span class="label">左-故障码</span><span class="value ok" id="f_m2_fault">0</span></div>
+      </div>
+
+      <div class="data-log" id="candump_box" style="width:260px;min-width:220px">
+        <div class="log-header">
+          <h4>📡 candump can0 (RX)</h4>
+          <input type="text" id="candump_filter" placeholder="301,302" style="width:70px;font-size:0.7em;padding:1px 4px" oninput="onCandumpFilter()">
+          <button onclick="clearCandump()">清空</button>
+        </div>
+        <div class="log-body" id="candump_body" style="color:#64748b"><span style="color:#94a3b8">-- 等待 CAN 帧...</span></div>
+      </div>
+
+      <div class="data-log" id="data_log">
+        <div class="log-header">
+          <h4>数据日志</h4>
+          <label style="font-size:0.65em;margin-right:4px"><input type="checkbox" id="log_motor" checked onchange="onLogFilter()">电机</label>
+          <label style="font-size:0.65em;margin-right:4px"><input type="checkbox" id="log_imu" checked onchange="onLogFilter()">IMU</label>
+          <label style="font-size:0.65em;margin-right:4px"><input type="checkbox" id="log_sensor" checked onchange="onLogFilter()">传感器</label>
+          <button onclick="clearLog()">清空</button>
+        </div>
+        <div class="log-body" id="log_body"><span style="color:#94a3b8">-- 等待数据...</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- /panel_chart -->
+
+<div class="perf-panel" id="panel_perf">
+  <!-- status bar -->
+  <div class="perf-statusbar">
+    <div class="perf-status-item">
+      <span class="ps-label">调度</span>
+      <span class="ps-value" id="pm_mode">--</span>
+    </div>
+    <div class="perf-status-item">
+      <span class="ps-label">周期</span>
+      <span class="ps-value" id="pm_period">--</span>
+    </div>
+    <div class="perf-status-item">
+      <span class="ps-label">超限</span>
+      <span class="ps-value" id="pm_overrun">0</span>
+    </div>
+    <div class="perf-status-item">
+      <span class="ps-label">超限速率</span>
+      <span class="ps-value" id="pm_overrun_rate">0/min</span>
+    </div>
+    <button class="perf-clear-btn" onclick="clearPerfData()">清空数据</button>
+  </div>
+
+  <!-- latency tables -->
+  <div class="perf-latency-row">
+    <div class="perf-lat-table">
+      <div class="plt-header">反馈延迟</div>
+      <div class="plt-row"><span class="plt-k">Min</span><span class="plt-v" id="pm_fb_min">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">Avg</span><span class="plt-v" id="pm_fb_avg">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">Max</span><span class="plt-v" id="pm_fb_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">SHM</span><span class="plt-v" id="pm_shm_age">--</span><span class="plt-u">μs</span></div>
+    </div>
+    <div class="perf-lat-table">
+      <div class="plt-header">控制延迟</div>
+      <div class="plt-row"><span class="plt-k">Min</span><span class="plt-v" id="pm_ctrl_min">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">Avg</span><span class="plt-v" id="pm_ctrl_avg">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">Max</span><span class="plt-v" id="pm_ctrl_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-header" style="margin-top:8px">命令通道</div>
+      <div class="plt-row"><span class="plt-k">Min</span><span class="plt-v" id="pm_mbox_age_min">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">Avg</span><span class="plt-v" id="pm_mbox_age_avg">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">Max</span><span class="plt-v" id="pm_mbox_age_max">--</span><span class="plt-u">μs</span></div>
+    </div>
+  </div>
+
+  <!-- charts -->
+  <div class="perf-chart-box">
+    <h4>反馈延迟趋势 (fb_max, 最近 60 帧)</h4>
+    <canvas id="perf_canvas_fb"></canvas>
+  </div>
+
+  <div class="perf-chart-box">
+    <h4>控制延迟趋势 (ctrl_max, 最近 60 帧)</h4>
+    <canvas id="perf_canvas_ctrl"></canvas>
+  </div>
+
+</div>
+<!-- /panel_perf -->
+
+<div class="batt-panel" id="panel_batt">
+  <!-- connection bar -->
+  <div class="batt-conn-row">
+    <input type="text" id="batt_ip" value="192.168.0.121" placeholder="IP">
+    <input type="number" id="batt_port" value="50080" placeholder="端口" style="width:65px">
+    <button id="batt_btn_conn" onclick="connectBattWS()">连接电池</button>
+    <button id="batt_btn_disc" onclick="disconnectBattWS()" style="background:#fef2f2;border-color:#fecaca;color:#dc2626;display:none">断开</button>
+    <span class="status" id="batt_conn_status">未连接</span>
+  </div>
+
+  <!-- status cards -->
+  <div class="batt-statusbar" id="batt_status_cards">
+    <div class="batt-card">
+      <div class="blabel">总电压</div>
+      <div class="bvalue" id="bv_total">--<span class="bunit">mV</span></div>
+    </div>
+    <div class="batt-card">
+      <div class="blabel">电流</div>
+      <div class="bvalue" id="bv_current">--<span class="bunit">mA</span></div>
+    </div>
+    <div class="batt-card">
+      <div class="blabel">温度</div>
+      <div class="bvalue" id="bv_temp">--<span class="bunit">℃</span></div>
+    </div>
+    <div class="batt-card">
+      <div class="blabel">SOC</div>
+      <div class="bvalue" id="bv_soc">--<span class="bunit">%</span></div>
+    </div>
+    <div class="batt-card">
+      <div class="blabel">剩余 / 总容量</div>
+      <div class="bvalue" id="bv_cap">-- / --<span class="bunit">mAh</span></div>
+    </div>
+    <div class="batt-card">
+      <div class="blabel">循环次数</div>
+      <div class="bvalue" id="bv_cycles">--</div>
+    </div>
+    <div class="batt-card">
+      <div class="blabel">充电电流设定</div>
+      <div class="bvalue" id="bv_chg_cur">--<span class="bunit">mA</span></div>
+    </div>
+    <div class="batt-card">
+      <div class="blabel">BMS状态</div>
+      <div class="bvalue" id="bv_bms">--</div>
+    </div>
+  </div>
+
+  <!-- cell voltages -->
+  <div class="batt-card">
+    <div class="blabel" style="margin-bottom:6px">电芯电压</div>
+    <div class="batt-cells" id="batt_cells">
+      <div class="batt-cell"><div class="cnum">Cell 1</div><div class="cval" id="bcv_1">--</div></div>
+      <div class="batt-cell"><div class="cnum">Cell 2</div><div class="cval" id="bcv_2">--</div></div>
+      <div class="batt-cell"><div class="cnum">Cell 3</div><div class="cval" id="bcv_3">--</div></div>
+      <div class="batt-cell"><div class="cnum">Cell 4</div><div class="cval" id="bcv_4">--</div></div>
+      <div class="batt-cell"><div class="cnum">Cell 5</div><div class="cval" id="bcv_5">--</div></div>
+      <div class="batt-cell"><div class="cnum">Cell 6</div><div class="cval" id="bcv_6">--</div></div>
+    </div>
+  </div>
+
+  <!-- BMS info -->
+  <div class="batt-card">
+    <div class="blabel">BMS 信息 <button onclick="refreshBattData()" style="float:right;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:0.75em;font-weight:600;margin-left:4px">🗑 清除</button><button onclick="queryBattInfo()" style="float:right;background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd;padding:2px 10px;border-radius:3px;cursor:pointer;font-size:0.75em;font-weight:600">🔄 查询版本/ID</button></div>
+    <div style="font-size:0.8em;margin-top:4px;clear:both">版本: <span id="bv_ver" style="font-weight:600">--</span> &nbsp;|&nbsp; ID: <span id="bv_id" style="font-weight:600">--</span></div>
+  </div>
+
+  <!-- fault status -->
+  <div class="batt-card">
+    <div class="blabel" style="margin-bottom:6px">故障状态</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px" id="batt_fault_grid">
+      <div class="batt-fault-row"><span class="flbl">充电器过压</span><span class="fval ok" id="bf_cov">正常</span></div>
+      <div class="batt-fault-row"><span class="flbl">充电过流</span><span class="fval ok" id="bf_coc">正常</span></div>
+      <div class="batt-fault-row"><span class="flbl">NTC短路</span><span class="fval ok" id="bf_ns">正常</span></div>
+      <div class="batt-fault-row"><span class="flbl">NTC断路</span><span class="fval ok" id="bf_no">正常</span></div>
+      <div class="batt-fault-row"><span class="flbl">电芯压差</span><span class="fval ok" id="bf_cvd">正常</span></div>
+      <div class="batt-fault-row"><span class="flbl">充电超时</span><span class="fval ok" id="bf_cto">正常</span></div>
+      <div class="batt-fault-row"><span class="flbl">放电过流</span><span class="fval ok" id="bf_doc">正常</span></div>
+      <div class="batt-fault-row"><span class="flbl">放电短路</span><span class="fval ok" id="bf_ds">正常</span></div>
+      <div class="batt-fault-row"><span class="flbl">二级过充</span><span class="fval ok" id="bf_soc">正常</span></div>
+    </div>
+  </div>
+
+  <!-- battery log -->
+  <div class="batt-card" style="margin-top:6px">
+    <div class="blabel" style="margin-bottom:4px">📋 电池日志</div>
+    <div id="batt_log_body" style="max-height:100px;overflow-y:auto;font-family:'SF Mono','Cascadia Code','Consolas',monospace;font-size:0.68em;line-height:1.5;color:#64748b;min-height:20px"><span style="color:#94a3b8">-- 等待连接...</span></div>
+  </div>
+
+  <!-- control panel -->
+  <div class="batt-ctrl">
+    <div class="batt-ctrl-group">
+      <h4>🔌 电源控制</h4>
+      <select id="bctrl_power">
+        <option value="0">停止供电(关机)</option>
+        <option value="16">轻载保护延时 1.5h</option>
+        <option value="17">打开 5s 轻载保护</option>
+      </select>
+      <button onclick="sendBattCtrl(1)">发送</button>
+    </div>
+    <div class="batt-ctrl-group">
+      <h4>🔄 充放电切换</h4>
+      <select id="bctrl_charge">
+        <option value="0">放电→充电</option>
+        <option value="1">充电→放电</option>
+      </select>
+      <button onclick="sendBattCtrl(2)">发送</button>
+    </div>
+  </div>
+
+  <!-- CC fast charge placeholder -->
+  <div class="batt-placeholder">
+    <h4>⚡ CC快充控制 & 充电数据显示</h4>
+    <p>预留接口，即将支持</p>
+  </div>
+</div>
+
+<div class="footer">
+
+  <button class="push-on" id="btn_push" onclick="togglePush()">暂停推流</button>
+  <button class="save" onclick="saveCSV()">保存CSV</button>
+  <span class="info" id="footer_info">帧: 0 | 已连接</span>
+</div>
+
+<script>
+// ── globals ──
+var g_ws = null, g_connected = false;
+var g_pushEnabled = true;
+var g_frameCount = 0;
+var g_records = [];
+var g_logThrottle = 0;
+var g_lastBtnState = 0;
+var g_lastBtnSeq = 0;
+
+var STATE_NAMES = {0:'未初始化',1:'初始化',2:'空闲',3:'校准中',4:'运行',5:'故障',6:'离线'};
+
+// ── Canvas Chart ──
+var DATA_WINDOW_S = 64;
+var CHART_WINDOW_S = 32;
+var CHART_RENDER_MS = 100;
+var chartData = {};
+var chartBaseTime = null;
+var chartPaused = false;
+var chartDirty = false;
+var chartLastRender = 0;
+var chartMouseX = -1, chartMouseY = -1;
+var chartOffset = 0;
+var chartDragging = false, chartDragStart = 0, chartDragOffset0 = 0;
+
+var CHART_KEYS = ['pos1','pos2','cur1','cur2','vel1','vel2','spi_tq1','spi_tq2','imu_r','imu_p','imu_y','c_cur1','c_cur2','c_pos1','c_pos2','c_vel1','c_vel2','c_tq1','c_tq2','foot_l1','foot_l2','foot_l3','foot_r1','foot_r2','foot_r3'];
+
+var CHART_COLORS = {
+  pos1:'#22c55e', pos2:'#ef4444', cur1:'#0ea5e9', cur2:'#f97316',
+  vel1:'#8b5cf6', vel2:'#ec4899',
+  spi_tq1:'#14b8a6', spi_tq2:'#f43f5e',
+
+  imu_r:'#06b6d4', imu_p:'#d946ef', imu_y:'#eab308',
+  c_cur1:'#0ea5e9', c_cur2:'#f97316', c_pos1:'#22c55e', c_pos2:'#ef4444',
+  c_vel1:'#8b5cf6', c_vel2:'#ec4899', c_tq1:'#14b8a6', c_tq2:'#f43f5e',
+  foot_l1:'#84cc16', foot_l2:'#a3e635', foot_l3:'#bef264',
+  foot_r1:'#fbbf24', foot_r2:'#f59e0b', foot_r3:'#d97706'
+};
+
+var CHART_LABELS = {
+  pos1:'右位置', pos2:'左位置', cur1:'右电流', cur2:'左电流',
+  vel1:'右速度', vel2:'左速度',
+  spi_tq1:'右力矩', spi_tq2:'左力矩',
+  imu_r:'横滚', imu_p:'俯仰', imu_y:'偏航',
+  c_cur1:'右电流指令', c_cur2:'左电流指令',
+  c_pos1:'右位置指令', c_pos2:'左位置指令',
+  c_vel1:'右速度指令', c_vel2:'左速度指令',
+  c_tq1:'右力矩指令', c_tq2:'左力矩指令',
+  foot_l1:'左前掌', foot_l2:'左足弓', foot_l3:'左后跟',
+  foot_r1:'右前掌', foot_r2:'右足弓', foot_r3:'右后跟'
+};
+
+CHART_KEYS.forEach(function(k){ chartData[k] = []; chartData[k]._h = 0; });
+
+// ── WebSocket ──
+function connectWS(){
+  if(g_ws){try{g_ws.close();}catch(e){}g_ws=null;}
+  var ip=document.getElementById('ws_ip').value.trim();
+  var port=document.getElementById('ws_port').value;
+  var url='ws://'+ip+':'+port+'/ws';
+  g_ws=new WebSocket(url);
+  g_ws.onopen=function(){
+    g_connected=true; updateConnUI(); resetChart();
+    g_ws.send('{"cmd":"report_start"}');
+  };
+  g_ws.onclose=function(){g_connected=false;updateConnUI();};
+  g_ws.onerror=function(){g_connected=false;updateConnUI();};
+  g_ws.onmessage=function(e){try{handleData(JSON.parse(e.data));}catch(err){}};
+}
+function disconnectWS(){
+  if(g_ws){
+    try{g_ws.send('{"cmd":"report_stop"}');}catch(e){}
+    try{g_ws.close();}catch(e){}
+    g_ws=null;
+  }
+  g_connected=false;
+  updateConnUI();
+  /* reset all data displays */
+  resetChart();
+  clearLog();
+  clearCandump();
+  clearPerfData();
+  document.getElementById('log_body').innerHTML='<span style="color:#94a3b8">-- 未连接 --</span>';
+  document.getElementById('candump_body').innerHTML='<span style="color:#94a3b8">-- 未连接 --</span>';
+  var fi = document.getElementById('footer_info');
+  if(fi) fi.textContent = '未连接';
+}
+function updateConnUI(){
+  var btnC=document.getElementById('btn_conn'),btnD=document.getElementById('btn_disc');
+  var st=document.getElementById('conn_status');
+  if(g_connected){
+    btnC.style.display='none';btnD.style.display='inline-block';
+    st.textContent='已连接';
+  }else{
+    btnC.style.display='inline-block';btnD.style.display='none';
+    st.textContent='未连接';
+  }
+}
+
+// ── mode switch ──
+function onModeChange(){
+  var mode = document.getElementById('ctrl_mode').value;
+  var pd = document.getElementById('ctrl_panel_pdosdo');
+  var cs = document.getElementById('ctrl_panel_cansend');
+  if(mode === 'cansend'){
+    pd.style.display = 'none';
+    cs.style.display = 'block';
+  } else {
+    pd.style.display = 'block';
+    cs.style.display = 'none';
+  }
+}
+
+// ── cansend data input auto-detect CAN/CANFD ──
+function onCansendDataInput(){
+  var data = document.getElementById('cansend_data').value.replace(/[\s#]/g,'');
+  var bytes = Math.ceil(data.length / 2);
+  var el = document.getElementById('cansend_type');
+  if(bytes <= 8){
+    el.textContent = 'CAN (' + bytes + 'B)';
+    el.style.color = '#0ea5e9';
+  } else {
+    el.textContent = 'CANFD (' + bytes + 'B)';
+    el.style.color = '#f59e0b';
+  }
+}
+
+// ── cansend TX ──
+function sendCansend(){
+  if(!g_ws||!g_connected){alert('未连接');return;}
+  var iface = document.getElementById('cansend_iface').value;
+  var id_hex = document.getElementById('cansend_id').value.replace(/^0x/i,'').replace(/[\s#]/g,'');
+  var data = document.getElementById('cansend_data').value.replace(/[\s#]/g,'');
+  if(!id_hex||!data){alert('请填写 ID 和 数据');return;}
+  var bytes = Math.ceil(data.length / 2);
+  var is_fd = (bytes > 8);  /* >8 bytes = CANFD, 也支持手动用 ## 前缀 */
+  g_ws.send(JSON.stringify({cmd:'cansend', iface:iface, id:id_hex, data:data, is_fd:is_fd}));
+}
+
+// ── candump RX ──
+var g_candumpLines = [];
+var g_candumpMax = 50;
+var g_candumpSeq = 0;
+function clearCandump(){
+  g_candumpLines = [];
+  document.getElementById('candump_body').innerHTML='<span style="color:#94a3b8">-- 已清空 --</span>';
+}
+var g_candumpFilter = []; /* 空=全部显示 */
+function onCandumpFilter(){
+  var raw = document.getElementById('candump_filter').value.replace(/\s/g,'');
+  g_candumpFilter = raw ? raw.split(',').map(function(s){return s.toUpperCase();}) : [];
+  renderCandump();
+}
+function renderCandump(){
+  var body = document.getElementById('candump_body');
+  if(!body) return;
+  var lines = g_candumpLines;
+  if(g_candumpFilter.length > 0){
+    lines = lines.filter(function(l){
+      /* extract COB-ID: "can0  301   [12]  ..." -> "301" */
+      var m = l.match(/\s([0-9A-Fa-f]{3,8})\s/);
+      if(!m) return false;
+      return g_candumpFilter.indexOf(m[1].toUpperCase()) >= 0;
+    });
+  }
+  if(lines.length === 0){
+    body.innerHTML = '<span style="color:#94a3b8">-- 无匹配帧 --</span>';
+  } else {
+    body.innerHTML = lines.map(function(l){return '<div style="white-space:nowrap;padding:1px 0">'+l+'</div>';}).join('');
+  }
+  body.scrollTop = body.scrollHeight;
+}
+function appendCandump(lines){
+  if(!lines||!lines.length) return;
+  var body = document.getElementById('candump_body');
+  if(!body) return;
+  for(var i = 0; i < lines.length; i++){
+    g_candumpLines.push(lines[i]);
+  }
+  while(g_candumpLines.length > g_candumpMax) g_candumpLines.shift();
+  renderCandump();
+}
+
+// ── commands ──
+function sendCtrl(cmd){
+  if(!g_ws||!g_connected){alert('未连接');return;}
+  var mode=document.getElementById('ctrl_mode').value;
+  var motor=parseInt(document.getElementById('ctrl_motor').value);
+  var msg={cmd:cmd, mode:mode, motor:motor};
+
+  if(cmd==='cur'){
+    var v1=parseInt(document.getElementById('val_cur_m1').value)||0;
+    var v2=parseInt(document.getElementById('val_cur_m2').value)||0;
+    msg.m1=v1;
+    if(motor===3) msg.m2=v2;
+  } else if(cmd==='pos'){
+    var p1=Math.round(parseFloat(document.getElementById('val_pos_m1').value)*100);
+    var p2=Math.round(parseFloat(document.getElementById('val_pos_m2').value)*100);
+    msg.m1=p1;
+    if(motor===3) msg.m2=p2;
+    msg.acc=parseInt(document.getElementById('val_pos_acc').value)||0;
+    msg.vel=parseInt(document.getElementById('val_pos_vel').value)||0;
+  } else if(cmd==='vel'){
+    var v1=parseInt(document.getElementById('val_vel_m1').value)||0;
+    var v2=parseInt(document.getElementById('val_vel_m2').value)||0;
+    msg.m1=v1;
+    if(motor===3) msg.m2=v2;
+    msg.acc=parseInt(document.getElementById('val_vel_acc').value)||0;
+  }
+
+  g_ws.send(JSON.stringify(msg));
+}
+
+function sendMgmt(cmd){
+  if(!g_ws||!g_connected){alert('未连接');return;}
+  var motor=parseInt(document.getElementById('mgmt_motor').value);
+  g_ws.send(JSON.stringify({cmd:cmd, motor:motor}));
+}
+
+function sendLED(){
+  if(!g_ws||!g_connected){alert('未连接');return;}
+  var motor=parseInt(document.getElementById('led_motor').value);
+  var mask=parseInt(document.getElementById('led_mask').value)||0;
+  var lmode=parseInt(document.getElementById('led_mode').value);
+  var r=parseInt(document.getElementById('led_r').value)||0;
+  var g=parseInt(document.getElementById('led_g').value)||0;
+  var b=parseInt(document.getElementById('led_b').value)||0;
+  g_ws.send(JSON.stringify({cmd:'led', motor:motor, mask:mask, lmode:lmode, r:r, g:g, b:b}));
+}
+
+function sendCalibTorque(){
+  if(!g_ws||!g_connected){alert('未连接');return;}
+  var motor=parseInt(document.getElementById('tq_motor').value);
+  var torque_nm=parseFloat(document.getElementById('tq_nm').value);
+  if(isNaN(torque_nm)){alert('请输入理论力矩值 (Nm)');return;}
+  if(torque_nm<-100||torque_nm>100){alert('力矩超出范围 [-100, 100] Nm');return;}
+  var torque_mNm=Math.round(torque_nm*1000);
+  if(!confirm('标定 M'+motor+': '+torque_nm.toFixed(1)+' Nm ('+torque_mNm+' mNm)\n\n确认电机已失能、关节静止、负载稳定？')) return;
+  g_ws.send(JSON.stringify({cmd:'calib_torque', motor:motor, value:torque_mNm}));
+}
+
+function sendCalibTorqueZero(){
+  if(!g_ws||!g_connected){alert('未连接');return;}
+  var motor=parseInt(document.getElementById('tq_motor').value);
+  if(!confirm('零漂标定 M'+motor+': 理论力矩=0Nm\n\n确认电机已失能、关节在机械零点、无外部负载。\n标定完成后力矩反馈应接近0Nm。\n确定执行？')) return;
+  g_ws.send(JSON.stringify({cmd:'calib_torque', motor:motor, value:0}));
+}
+
+function sendMitMigrate(){
+  if(!g_ws||!g_connected){alert('未连接');return;}
+  var motor=parseInt(document.getElementById('mig_motor').value);
+  if(!confirm('MIT迁移 M'+motor+': 写 0x2546=20(Tmax) + 0x2539=1 保存Flash\n\n确认电机已失能。执行后需重启驱动器并验证。\n确定执行？')) return;
+  g_ws.send(JSON.stringify({cmd:'mit_migrate', motor:motor}));
+}
+
+function readBtn(){
+  var el=document.getElementById('btn_status');
+  if(!el)return;
+  // btn_state and btn_seq come from periodic JSON push
+  var state=g_lastBtnState!==undefined?g_lastBtnState:0;
+  var seq=g_lastBtnSeq!==undefined?g_lastBtnSeq:0;
+  if(state===0) el.innerHTML='<span style="color:#94a3b8">松开</span>';
+  else el.innerHTML='<span style="color:#16a34a">按下</span> (seq='+seq+')';
+}
+
+function togglePush(){
+  if(!g_ws||!g_connected)return;
+  g_pushEnabled=!g_pushEnabled;
+  var btn=document.getElementById('btn_push');
+  if(g_pushEnabled){g_ws.send('{"cmd":"report_start"}');btn.textContent='暂停推流';btn.className='push-on';}
+  else{g_ws.send('{"cmd":"report_stop"}');btn.textContent='恢复推流';btn.className='push-off';}
+}
+
+// ── Canvas Chart Engine ──
+function feedChart(d){
+  if(chartPaused) return;
+  if(chartBaseTime === null && d.ts) chartBaseTime = d.ts;
+  if(chartBaseTime === null) return;
+  var t = (d.ts - chartBaseTime) / 1000.0;
+  
+  var pt = function(k, v){
+    if(v != null && isFinite(v)) chartData[k].push({t:t, v:v});
+  };
+  
+  pt('pos1', d.m1_angle);
+  pt('pos2', d.m2_angle);
+  pt('cur1', (d.m1_cur||0)/100.0);
+  pt('cur2', (d.m2_cur||0)/100.0);
+  pt('vel1', (d.m1_vel||0)/10.0);
+  pt('vel2', (d.m2_vel||0)/10.0);
+  pt('spi_tq1', d.spi_torque||0);
+  pt('spi_tq2', d.spi_torque2||0);
+
+  pt('imu_r', d.imu_roll);
+  pt('imu_p', d.imu_pitch);
+  pt('imu_y', d.imu_yaw);
+  
+  if(d.cmd_cur1_valid) pt('c_cur1', d.cmd_cur1/1000.0);
+  if(d.cmd_cur2_valid) pt('c_cur2', d.cmd_cur2/1000.0);
+  if(d.cmd_pos1_valid) pt('c_pos1', d.cmd_pos1/100.0);
+  if(d.cmd_pos2_valid) pt('c_pos2', d.cmd_pos2/100.0);
+  if(d.cmd_vel1_valid) pt('c_vel1', d.cmd_vel1);
+  if(d.cmd_vel2_valid) pt('c_vel2', d.cmd_vel2);
+  if(d.cmd_tq1_valid) pt('c_tq1', d.cmd_tq1 * 0.05);
+  if(d.cmd_tq2_valid) pt('c_tq2', d.cmd_tq2 * 0.05);
+  
+  pt('foot_l1', d.foot_l1); pt('foot_l2', d.foot_l2); pt('foot_l3', d.foot_l3);
+  pt('foot_r1', d.foot_r1); pt('foot_r2', d.foot_r2); pt('foot_r3', d.foot_r3);
+  
+  var cutoff = t - DATA_WINDOW_S;
+  var maxPts = DATA_WINDOW_S * 200 + 200;
+  CHART_KEYS.forEach(function(k){
+    var a = chartData[k];
+    var h = a._h;
+    while(h < a.length && a[h].t < cutoff) h++;
+    a._h = h;
+    if(a.length - h > maxPts) a._h = h = a.length - maxPts;
+  });
+  
+  chartDirty = true;
+  drawChart();
+}
+
+function resetChart(){
+  CHART_KEYS.forEach(function(k){ chartData[k] = []; chartData[k]._h = 0; });
+  chartBaseTime = null; chartDirty = true; chartOffset = 0;
+  drawChart();
+}
+
+function drawChart(){
+  var canvas = document.getElementById('main_chart');
+  if(!canvas || !chartDirty) return;
+  chartDirty = false;
+  
+  var dpr = window.devicePixelRatio || 1;
+  var parent = canvas.parentElement;
+  if(!parent) return;
+  var rect = parent.getBoundingClientRect();
+  if(rect.width < 10) return;
+  var W = rect.width * dpr, H = rect.height * dpr;
+  if(H < 50) H = 350 * dpr;
+  canvas.width = W; canvas.height = H;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  
+  var ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  
+  var active = [];
+  document.querySelectorAll('#chartYAxis input[type=checkbox]').forEach(function(cb){
+    if(cb.checked && chartData[cb.dataset.key]) active.push(cb.dataset.key);
+  });
+  if(!active.length) return;
+  
+  var last = chartData[active[0]];
+  var now = last.length ? last[last.length-1].t : 0;
+  var rawMin = Math.max(0, now - CHART_WINDOW_S - chartOffset);
+  var tMax = rawMin + CHART_WINDOW_S;
+  var tMin = rawMin;
+  
+  var yMin = Infinity, yMax = -Infinity;
+  active.forEach(function(k){
+    var a = chartData[k];
+    for(var i = a._h || 0; i < a.length; i++){
+      var p = a[i];
+      if(p.t < tMin) continue;
+      if(p.t > tMax) break;
+      if(p.v < yMin) yMin = p.v;
+      if(p.v > yMax) yMax = p.v;
+    }
+  });
+  if(yMin === Infinity){ yMin = 0; yMax = 1; }
+  if(yMax - yMin < 0.01){ yMin -= 0.5; yMax += 0.5; }
+  var pad = (yMax - yMin) * 0.1 || 1;
+  yMin -= pad; yMax += pad;
+  
+  var yr = yMax - yMin;
+  var zLo = yMin + 0.2 * yr, zHi = yMax - 0.2 * yr;
+  if(0 < zLo) yMin = 0 - 0.3 * yr;
+  if(0 > zHi) yMax = 0 + 0.3 * yr;
+  
+  var M = {t: 30, r: 20, b: 40, l: 60};
+  var pw = W - M.l - M.r, ph = H - M.t - M.b;
+  
+  var toX = function(t){ return M.l + ((t - tMin) / (tMax - tMin)) * pw; };
+  var toY = function(v){ return M.t + ph - ((v - yMin) / (yMax - yMin)) * ph; };
+  
+  ctx.strokeStyle = '#eee'; ctx.lineWidth = 0.5 * dpr;
+  for(var i = 0; i <= 5; i++){
+    var y = M.t + ph / 5 * i;
+    ctx.beginPath(); ctx.moveTo(M.l, y); ctx.lineTo(W - M.r, y); ctx.stroke();
+  }
+  
+  var y0 = toY(0);
+  if(y0 >= M.t && y0 <= M.t + ph){
+    ctx.strokeStyle = '#999'; ctx.lineWidth = 1 * dpr;
+    ctx.beginPath(); ctx.moveTo(M.l, y0); ctx.lineTo(W - M.r, y0); ctx.stroke();
+    ctx.fillStyle = '#333'; ctx.font = (10*dpr) + 'px sans-serif';
+    ctx.textAlign = 'right'; ctx.fillText('0', M.l - 6*dpr, y0 + 3*dpr);
+  }
+  
+  for(var i = 0; i <= 6; i++){
+    var x = M.l + pw / 6 * i;
+    ctx.beginPath(); ctx.moveTo(x, M.t); ctx.lineTo(x, H - M.b); ctx.stroke();
+  }
+  
+  ctx.fillStyle = '#333'; ctx.font = (10*dpr) + 'px sans-serif'; ctx.textAlign = 'right';
+  for(var i = 0; i <= 5; i++){
+    var v = yMin + (yMax - yMin) * i / 5;
+    var y = toY(v);
+    ctx.beginPath(); ctx.moveTo(M.l - 4*dpr, y); ctx.lineTo(M.l, y);
+    ctx.strokeStyle = '#999'; ctx.stroke();
+    ctx.fillText(v.toFixed(1), M.l - 6*dpr, y + 3*dpr);
+  }
+  
+  ctx.fillStyle = '#666'; ctx.font = (10*dpr) + 'px sans-serif'; ctx.textAlign = 'center';
+  var tickS = CHART_WINDOW_S / 6;
+  for(var i = 0; i <= 6; i++){
+    ctx.fillText((tMin + tickS * i).toFixed(1) + 's', M.l + pw/6*i, H - M.b + 14*dpr);
+  }
+  ctx.fillText(CHART_WINDOW_S + 's', M.l + pw - 30*dpr, M.t - 6*dpr);
+  
+  active.forEach(function(k){
+    var isCmd = k.charAt(0) === 'c';
+    ctx.strokeStyle = CHART_COLORS[k];
+    ctx.lineWidth = 1.5 * dpr;
+    if(isCmd) ctx.setLineDash([6*dpr, 3*dpr]);
+    else ctx.setLineDash([]);
+    ctx.beginPath();
+    var first = true;
+    var a = chartData[k];
+    for(var i = a._h || 0; i < a.length; i++){
+      var p = a[i];
+      if(p.t < tMin) continue;
+      if(p.t > tMax) break;
+      var x = toX(p.t), y = toY(p.v);
+      if(first){ ctx.moveTo(x, y); first = false; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  });
+  ctx.setLineDash([]);
+  
+  ctx.strokeStyle = '#ccc'; ctx.lineWidth = dpr;
+  ctx.strokeRect(M.l, M.t, pw, ph);
+  
+  var mx = chartMouseX * dpr, my = chartMouseY * dpr;
+  if(mx > M.l && mx < M.l + pw && my > M.t && my < M.t + ph){
+    var mt = (mx - M.l) / pw * (tMax - tMin) + tMin;
+    var ref = chartData[active[0]];
+    var bestI = -1, bestD = Infinity;
+    if(ref && ref.length){
+      for(var i = ref._h || 0; i < ref.length; i++){
+        var d = Math.abs(ref[i].t - mt);
+        if(d < bestD){ bestD = d; bestI = i; }
+        else if(ref[i].t > mt + 1) break;
+      }
+    }
+    if(bestI >= 0){
+      var tt = ref[bestI].t;
+      var tx = M.l + (tt - tMin) / (tMax - tMin) * pw;
+      ctx.strokeStyle = '#999'; ctx.lineWidth = 0.5 * dpr;
+      ctx.beginPath(); ctx.moveTo(tx, M.t); ctx.lineTo(tx, M.t + ph); ctx.stroke();
+      
+      ctx.font = 'bold ' + (15*dpr) + 'px monospace';
+      var lines = [{txt: 't=' + tt.toFixed(3) + 's', color: '#111', bold: true}];
+      var maxW = ctx.measureText(lines[0].txt).width;
+      ctx.font = (15*dpr) + 'px monospace';
+      
+      active.forEach(function(k){
+        var a = chartData[k];
+        for(var i = bestI; i < a.length; i++){
+          if(Math.abs(a[i].t - tt) < 0.001){
+            var txt = CHART_LABELS[k] + ':' + a[i].v.toFixed(2);
+            lines.push({txt: txt, color: CHART_COLORS[k]});
+            var w = ctx.measureText(txt).width;
+            if(w > maxW) maxW = w;
+            break;
+          }
+        }
+      });
+      
+      if(lines.length){
+        var bx = tx + 8*dpr, by = Math.max(M.t, my - 10*dpr);
+        var bw = Math.max(maxW, 80*dpr) + 24*dpr;
+        var bh = lines.length * 18*dpr + 10*dpr;
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1*dpr;
+        ctx.strokeRect(bx, by, bw, bh);
+        lines.forEach(function(l, i){
+          ctx.fillStyle = l.color;
+          ctx.font = (15*dpr) + 'px monospace' + (l.bold ? ' bold' : '');
+          ctx.textAlign = 'left';
+          ctx.fillText(l.txt, bx + 10*dpr, by + 14*dpr + i*18*dpr);
+        });
+      }
+    }
+  }
+}
+
+function exportChartCSV(){
+  var active = [];
+  document.querySelectorAll('#chartYAxis input[type=checkbox]').forEach(function(cb){
+    if(cb.checked && chartData[cb.dataset.key]) active.push(cb.dataset.key);
+  });
+  if(!active.length) return;
+  
+  var rows = [['t'].concat(active)];
+  var idx = active.map(function(k){ return chartData[k]._h || 0; });
+  
+  while(idx.some(function(v, i){ return v < chartData[active[i]].length; })){
+    var row = [];
+    var minT = Infinity;
+    active.forEach(function(k, i){
+      var a = chartData[k];
+      if(idx[i] < a.length && a[idx[i]].t < minT) minT = a[idx[i]].t;
+    });
+    row.push(minT.toFixed(3));
+    active.forEach(function(k, i){
+      var a = chartData[k];
+      if(idx[i] < a.length && Math.abs(a[idx[i]].t - minT) < 0.001){
+        row.push(a[idx[i]].v); idx[i]++;
+      } else row.push('');
+    });
+    rows.push(row);
+  }
+  
+  var csv = rows.map(function(r){ return r.join(','); }).join('\n');
+  var blob = new Blob([csv], {type: 'text/csv'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'chart_data.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ── chart pause ──
+function togglePause(){
+  chartPaused = !chartPaused;
+  var el = document.getElementById('chart_box');
+  if(chartPaused) el.classList.add('paused');
+  else { el.classList.remove('paused'); chartDirty = true; drawChart(); }
+}
+
+// ── data handler ──
+function handleData(d){
+  g_frameCount++;
+  
+  if(d.btn_state !== undefined){ g_lastBtnState = d.btn_state; g_lastBtnSeq = d.btn_seq || 0; readBtn(); }
+  
+
+  if(!chartPaused) feedChart(d);
+  
+  g_logThrottle++;
+  appendLog(d);
+  
+  // candump RX
+  if(d.can_rx && d.can_rx.length && d.can_rx_seq !== g_candumpSeq){
+    g_candumpSeq = d.can_rx_seq;
+    appendCandump(d.can_rx);
+  }
+  
+  updateFaultPanel(d);
+  updatePerfPanel(d);
+  if(g_records.length < 5000) g_records.push(d);
+  
+  var info = document.getElementById('footer_info');
+  if(info && g_frameCount % 30 === 0){
+    info.textContent = '帧: ' + g_frameCount + ' | 记录: ' + g_records.length + (chartPaused ? ' | 暂停中' : '');
+  }
+}
+
+// ── fault panel ──
+function updateFaultPanel(d){
+  setFV('f_m1_temp',(d.m1_temp!=null?d.m1_temp.toFixed(1)+' °C':'-'));
+  setFV('f_m1_fault','0x'+((d.m1_fault||0)&0xFFFF).toString(16).toUpperCase().padStart(4,'0'),d.m1_fault?'err':'ok');
+  setFV('f_m2_temp',(d.m2_temp!=null?d.m2_temp.toFixed(1)+' °C':'-'));
+  setFV('f_m2_fault','0x'+((d.m2_fault||0)&0xFFFF).toString(16).toUpperCase().padStart(4,'0'),d.m2_fault?'err':'ok');
+}
+function setFV(id,text,cls){
+  var el=document.getElementById(id);if(!el)return;
+  el.textContent=text;el.className='value '+(cls||'ok');
+}
+
+// ── log (report format) ──
+var g_maxLog=100;
+function clearLog(){document.getElementById('log_body').innerHTML='<span style="color:#94a3b8">-- 已清空 --</span>';}
+function padR(s,n){s=String(s);while(s.length<n)s=' '+s;return s;}
+function onLogFilter(){
+  var style = document.getElementById('log_filter_style');
+  if(!style){
+    style = document.createElement('style');
+    style.id = 'log_filter_style';
+    document.head.appendChild(style);
+  }
+  var css = '';
+  if(!document.getElementById('log_motor').checked)  css += '.log-motor{display:none}';
+  if(!document.getElementById('log_imu').checked)    css += '.log-imu{display:none}';
+  if(!document.getElementById('log_sensor').checked) css += '.log-sensor{display:none}';
+  style.textContent = css;
+}
+function appendLog(d){
+  var body=document.getElementById('log_body');if(!body)return;
+  var frag=document.createDocumentFragment();
+  function addDiv(cls,text){
+    var div=document.createElement('div');
+    div.style.whiteSpace='nowrap';div.style.padding='1px 0';
+    div.className=cls;
+    div.textContent=text;
+    frag.appendChild(div);
+  }
+  addDiv('log-hdr','=== ['+d.ts+'ms] ver='+d.ver+' frame='+d.cycle+' m_ts='+(d.motor_ts||0)+' i_ts='+(d.imu_ts||0)+' s_ts='+(d.sensor_ts||0)+' ===');
+  addDiv('log-imu','IMU  gyro(x='+(d.imu_gyro_x||0).toFixed(2)+' y='+(d.imu_gyro_y||0).toFixed(2)+' z='+(d.imu_gyro_z||0).toFixed(2)+')dps  '+
+    'quat(w='+(d.imu_quat_w||0).toFixed(4)+' x='+(d.imu_quat_x||0).toFixed(4)+' y='+(d.imu_quat_y||0).toFixed(4)+' z='+(d.imu_quat_z||0).toFixed(4)+')  '+
+    'euler(roll='+(d.imu_roll||0).toFixed(1)+' pitch='+(d.imu_pitch||0).toFixed(1)+' yaw='+(d.imu_yaw||0).toFixed(1)+')deg  '+
+    'acc(x='+(d.imu_acc_x||0).toFixed(3)+' y='+(d.imu_acc_y||0).toFixed(3)+' z='+(d.imu_acc_z||0).toFixed(3)+')g  press='+(d.imu_press||0).toFixed(1)+'hPa');
+  addDiv('log-motor','M1   vel='+padR(d.m1_vel||0,7)+'RPM  ang='+padR((d.m1_angle||0).toFixed(1),6)+'deg  Iq='+padR(d.m1_cur||0,5)+'mA  '+
+    'busI='+padR(d.m1_busI||0,4)+'mA  temp='+padR((d.m1_temp||0).toFixed(2),6)+'C  fault=0x'+((d.m1_fault||0)&0xFFFF).toString(16).toUpperCase().padStart(4,'0')+'  state=0x'+((d.m1_state||0)&0xFF).toString(16).toUpperCase().padStart(2,'0'));
+  addDiv('log-motor','M2   vel='+padR(d.m2_vel||0,7)+'RPM  ang='+padR((d.m2_angle||0).toFixed(1),6)+'deg  Iq='+padR(d.m2_cur||0,5)+'mA  '+
+    'busI='+padR(d.m2_busI||0,4)+'mA  temp='+padR((d.m2_temp||0).toFixed(2),6)+'C  fault=0x'+((d.m2_fault||0)&0xFFFF).toString(16).toUpperCase().padStart(4,'0')+'  state=0x'+((d.m2_state||0)&0xFF).toString(16).toUpperCase().padStart(2,'0'));
+  addDiv('log-sensor','S1   hall(a='+(d.m1_hall_a||0)+' b='+(d.m1_hall_b||0)+' c='+(d.m1_hall_c||0)+')  torque='+(d.m1_torque||0)+'  tq_fb='+((d.m1_torque_fb||0).toFixed(2))+'Nm  knee='+(d.m1_knee||0)+'  land='+(d.m1_land||0)+'  valid='+(d.m1_torque_valid||0));
+  addDiv('log-sensor','S2   hall(a='+(d.m2_hall_a||0)+' b='+(d.m2_hall_b||0)+' c='+(d.m2_hall_c||0)+')  torque='+(d.m2_torque||0)+'  tq_fb='+((d.m2_torque_fb||0).toFixed(2))+'Nm  knee='+(d.m2_knee||0)+'  land='+(d.m2_land||0)+'  valid='+(d.m2_torque_valid||0));
+
+  body.appendChild(frag);
+  while(body.children.length>g_maxLog&&body.firstChild)body.removeChild(body.firstChild);
+  body.scrollTop=body.scrollHeight;
+}
+
+// ── CSV ──
+function saveCSV(){
+  if(g_records.length===0){alert('无数据');return;}
+  var hdr=['时刻','状态','右-角度','右-速度','右-电流','右-温度','右-故障','右-状态','左-角度','左-速度','左-电流','左-温度','左-故障','左-状态','IMU横滚','IMU俯仰','IMU偏航'];
+  var lines=[hdr.join(',')];
+  for(var i=0;i<g_records.length;i++){
+    var r=g_records[i];
+    var row=[r.ts,STATE_NAMES[r.state]||r.state,r.m1_angle,(r.m1_vel||0)/10.0,(r.m1_cur||0)/100.0,r.m1_temp,r.m1_fault,r.m1_state,r.m2_angle,(r.m2_vel||0)/10.0,(r.m2_cur||0)/100.0,r.m2_temp,r.m2_fault,r.m2_state,r.imu_roll,r.imu_pitch,r.imu_yaw];
+    lines.push(row.join(','));
+  }
+  var blob=new Blob(['\uFEFF'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='stark_debug_'+new Date().toISOString().replace(/[:.]/g,'-')+'.csv';a.click();URL.revokeObjectURL(a.href);
+}
+
+// ── mouse / chart controls ──
+function setupChartMouse(){
+  setTimeout(function(){
+    var pb = document.getElementById('chartPauseBtn');
+    if(pb){
+      pb.addEventListener('click', function(){
+        chartPaused = !chartPaused;
+        pb.textContent = chartPaused ? '▶️ 继续' : '⏸️ 暂停';
+        pb.className = chartPaused ? 'btn btn-sm btn-success' : 'btn btn-sm btn-secondary';
+        var el = document.getElementById('chart_box');
+        if(chartPaused) el.classList.add('paused');
+        else { el.classList.remove('paused'); chartOffset = 0; chartDirty = true; drawChart(); }
+      });
+    }
+    
+    var eb = document.getElementById('chartExportBtn');
+    if(eb) eb.addEventListener('click', exportChartCSV);
+    
+    document.querySelectorAll('#chartYAxis input[type=checkbox]').forEach(function(cb){
+      cb.addEventListener('change', function(){ chartDirty = true; drawChart(); });
+    });
+    
+    var cv = document.getElementById('main_chart');
+    if(cv){
+      var _lastMM = 0;
+      cv.addEventListener('wheel', function(e){
+        e.preventDefault();
+        CHART_WINDOW_S = e.deltaY > 0 ? Math.min(100, CHART_WINDOW_S * 2) : Math.max(0.5, CHART_WINDOW_S / 2);
+        chartOffset = Math.min(chartOffset, Math.max(0, DATA_WINDOW_S - CHART_WINDOW_S));
+        chartDirty = true; drawChart();
+      }, {passive: false});
+      
+      cv.addEventListener('mousedown', function(e){
+        e.preventDefault();
+        chartDragging = true;
+        chartDragStart = e.clientX;
+        chartDragOffset0 = chartOffset;
+      });
+      
+      window.addEventListener('mouseup', function(){ chartDragging = false; });
+      
+      cv.addEventListener('mouseleave', function(){
+        chartDragging = false;
+        chartMouseX = -1;
+        chartDirty = true; drawChart();
+      });
+      
+      window.addEventListener('mousemove', function(e){
+        var r = cv.getBoundingClientRect();
+        chartMouseX = e.clientX - r.left;
+        chartMouseY = e.clientY - r.top;
+        if(chartDragging){
+          var pxPerSec = (r.width - 80) / (CHART_WINDOW_S || 1);
+          var dt = (e.clientX - chartDragStart) / pxPerSec;
+          var maxOff = Math.max(0, DATA_WINDOW_S - CHART_WINDOW_S);
+          chartOffset = Math.max(0, Math.min(maxOff, chartDragOffset0 - dt));
+          chartDirty = true; drawChart();
+        } else {
+          var now = performance.now();
+          if(now - _lastMM > 50){ _lastMM = now; chartDirty = true; drawChart(); }
+        }
+      });
+    }
+  }, 200);
+}
+
+// ── tab switching ──
+var g_currentTab = 'chart';
+function onSwitchTab(tab){
+  g_currentTab = tab;
+  document.getElementById('tab_chart').className = (tab === 'chart') ? 'active' : '';
+  document.getElementById('tab_perf').className  = (tab === 'perf')  ? 'active' : '';
+  document.getElementById('tab_batt').className  = (tab === 'batt')  ? 'active' : '';
+
+  document.getElementById('panel_chart').style.display = (tab === 'chart') ? '' : 'none';
+  var pp = document.getElementById('panel_perf');
+  if(tab === 'perf'){
+    pp.classList.add('show');
+    drawPerfCharts();
+  } else {
+    pp.classList.remove('show');
+  }
+
+  var bp = document.getElementById('panel_batt');
+  if(tab === 'batt'){
+    bp.classList.add('show');
+  } else {
+    bp.classList.remove('show');
+  }
+
+  if(tab === 'chart'){
+    chartDirty = true; drawChart();
+  }
+}
+
+// ── perf monitoring ──
+var g_perfFbMax = [];       /* last 60 feedback max samples */
+var g_perfCtrlMax = [];     /* last 60 control max samples */
+var g_perfOverrun = 0;
+var g_perfLastOverrun = 0;
+var g_perfOverrunTs = 0;
+var g_perfOverrunRate = 0;
+var g_perfTotalFrames = 0;
+var g_perfRtMode = 0;
+var g_perfLastUpdate = 0;
+
+function clearPerfData(){
+  g_perfFbMax = [];
+  g_perfCtrlMax = [];
+  g_perfOverrun = 0;
+  g_perfLastOverrun = 0;
+  g_perfOverrunTs = 0;
+  g_perfOverrunRate = 0;
+  g_perfTotalFrames = 0;
+  g_perfRtMode = 0;
+  /* reset UI */
+  var me = document.getElementById('pm_mode');
+  if(me){ me.textContent = '--'; me.className = 'ps-value'; }
+  var oe = document.getElementById('pm_overrun');
+  if(oe) oe.textContent = '0';
+  var or = document.getElementById('pm_overrun_rate');
+  if(or) or.textContent = '0/min';
+  var ids = ['pm_fb_min','pm_fb_avg','pm_fb_max','pm_shm_age','pm_ctrl_min','pm_ctrl_avg','pm_ctrl_max','pm_mbox_age_min','pm_mbox_age_avg','pm_mbox_age_max'];
+  for(var i = 0; i < ids.length; i++){
+    var el = document.getElementById(ids[i]);
+    if(el) el.textContent = '--';
+  }
+  drawPerfCharts();
+}
+
+function updatePerfPanel(d){
+  var now = Date.now();
+  if(now - g_perfLastUpdate < 500 && g_currentTab !== 'perf') return;
+  g_perfLastUpdate = now;
+
+  if(d.rt_mode !== undefined) g_perfRtMode = d.rt_mode;
+  if(d.overrun !== undefined){
+    if(g_perfOverrunTs > 0){
+      var dt_min = (now - g_perfOverrunTs) / 60000;
+      if(dt_min > 0.01 && d.overrun >= g_perfLastOverrun){
+        g_perfOverrunRate = Math.round((d.overrun - g_perfLastOverrun) / dt_min * 10) / 10;
+      }
+    }
+    g_perfLastOverrun = d.overrun;
+    g_perfOverrunTs = now;
+    g_perfOverrun = d.overrun;
+  }
+  g_perfTotalFrames++;
+
+  /* latency history (server-side authoritative values) */
+  if(d.fb_max !== undefined){
+    g_perfFbMax.push(d.fb_max);
+    if(g_perfFbMax.length > 60) g_perfFbMax.shift();
+  }
+  if(d.ctrl_max !== undefined){
+    g_perfCtrlMax.push(d.ctrl_max);
+    if(g_perfCtrlMax.length > 60) g_perfCtrlMax.shift();
+  }
+
+  /* status bar */
+  var modeEl = document.getElementById('pm_mode');
+  if(modeEl){
+    if(g_perfRtMode){
+      modeEl.textContent = 'SCHED_FIFO';
+      modeEl.className = 'ps-value sched_fifo';
+    } else {
+      modeEl.textContent = 'SCHED_OTHER';
+      modeEl.className = 'ps-value sched_other';
+    }
+  }
+  var ovEl = document.getElementById('pm_overrun');
+  if(ovEl) ovEl.textContent = g_perfOverrun;
+  var ovRate = document.getElementById('pm_overrun_rate');
+  if(ovRate) ovRate.textContent = g_perfOverrunRate.toFixed(1) + '/min';
+
+  /* latency tables (direct from server JSON) */
+  setPV('pm_fb_min', d.fb_min);
+  setPV('pm_fb_avg', d.fb_avg);
+  setPV('pm_fb_max', d.fb_max);
+  setPV('pm_shm_age', d.shm_age);
+  setPV('pm_ctrl_min', d.ctrl_min);
+  setPV('pm_ctrl_avg', d.ctrl_avg);
+  setPV('pm_ctrl_max', d.ctrl_max);
+  setPV('pm_mbox_age_min', d.mbox_age_min);
+  setPV('pm_mbox_age_avg', d.mbox_age_avg);
+  setPV('pm_mbox_age_max', d.mbox_age_max);
+
+  /* RT period (from server, with unit) */
+  var pEl = document.getElementById('pm_period');
+  if(pEl && d.period_us !== undefined) pEl.textContent = d.period_us + ' \u03bcs';
+
+  if(g_currentTab === 'perf') drawPerfCharts();
+}
+
+function setPV(id, val){
+  var el = document.getElementById(id);
+  if(!el) return;
+  if(val !== undefined && val !== null) el.textContent = val;
+}
+
+function drawPerfCharts(){
+  var fbAvg = 0, ctrlAvg = 0;
+  if(g_perfFbMax.length){
+    var s = 0;
+    for(var i = 0; i < g_perfFbMax.length; i++) s += g_perfFbMax[i];
+    fbAvg = Math.round(s / g_perfFbMax.length);
+  }
+  if(g_perfCtrlMax.length){
+    var s = 0;
+    for(var i = 0; i < g_perfCtrlMax.length; i++) s += g_perfCtrlMax[i];
+    ctrlAvg = Math.round(s / g_perfCtrlMax.length);
+  }
+  drawPerfBarChart('perf_canvas_fb', g_perfFbMax, 'μs', '#0ea5e9', fbAvg);
+  drawPerfBarChart('perf_canvas_ctrl', g_perfCtrlMax, 'μs', '#8b5cf6', ctrlAvg);
+}
+
+function drawPerfBarChart(canvasId, data, unit, color, avgValue){
+  var canvas = document.getElementById(canvasId);
+  if(!canvas) return;
+  var dpr = window.devicePixelRatio || 1;
+  var rect = canvas.parentElement.getBoundingClientRect();
+  var W = rect.width * dpr, H = 130 * dpr;
+  canvas.width = W; canvas.height = H;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = '130px';
+
+  var ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  if(!data.length){
+    ctx.fillStyle = '#94a3b8'; ctx.font = (12*dpr) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('-- 等待数据...', W/2, H/2);
+    return;
+  }
+
+  var M = {t: 10, r: 10, b: 24, l: 50};
+  var pw = W - M.l - M.r, ph = H - M.t - M.b;
+  var barW = Math.max(2*dpr, pw / data.length * 0.8);
+  var gap = pw / data.length;
+
+  /* find max for scale */
+  var vmax = 1;
+  for(var i = 0; i < data.length; i++){ if(data[i] > vmax) vmax = data[i]; }
+  if(vmax < 10) vmax = 10;
+  vmax = Math.ceil(vmax * 1.2);
+
+  /* grid */
+  ctx.strokeStyle = '#eee'; ctx.lineWidth = 0.5 * dpr;
+  for(var i = 0; i <= 4; i++){
+    var y = M.t + ph / 4 * i;
+    ctx.beginPath(); ctx.moveTo(M.l, y); ctx.lineTo(W - M.r, y); ctx.stroke();
+  }
+
+  /* y-axis labels */
+  ctx.fillStyle = '#666'; ctx.font = (10*dpr) + 'px sans-serif'; ctx.textAlign = 'right';
+  for(var i = 0; i <= 4; i++){
+    var v = vmax * (4 - i) / 4;
+    var y = M.t + ph / 4 * i;
+    ctx.fillText(Math.round(v), M.l - 6*dpr, y + 3*dpr);
+  }
+  ctx.fillText(unit, M.l - 6*dpr, M.t - 2*dpr);
+
+  /* bars */
+  for(var i = 0; i < data.length; i++){
+    var x = M.l + i * gap + (gap - barW) / 2;
+    var bh = Math.max(1, (data[i] / vmax) * ph);
+    var y = M.t + ph - bh;
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, barW, bh);
+  }
+
+  /* baseline */
+  ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.5 * dpr;
+  ctx.beginPath(); ctx.moveTo(M.l, M.t + ph); ctx.lineTo(W - M.r, M.t + ph); ctx.stroke();
+
+  /* avg reference line (dashed) */
+  if(avgValue !== undefined && avgValue > 0){
+    var ay = M.t + ph - (avgValue / vmax) * ph;
+    if(ay > M.t && ay < M.t + ph){
+      ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1 * dpr;
+      ctx.setLineDash([4 * dpr, 4 * dpr]);
+      ctx.beginPath(); ctx.moveTo(M.l, ay); ctx.lineTo(W - M.r, ay); ctx.stroke();
+      ctx.setLineDash([]);
+      /* avg label */
+      ctx.fillStyle = '#f59e0b'; ctx.font = (9 * dpr) + 'px sans-serif'; ctx.textAlign = 'right';
+      ctx.fillText('avg=' + Math.round(avgValue), W - M.r - 4 * dpr, ay - 3 * dpr);
+    }
+  }
+}
+
+
+// ── battery WebSocket (independent connection to stark_power) ──
+var g_battWs = null;
+var g_battConnected = false;
+var g_lastBattStatus = {}, g_lastBattFault = {};
+
+function connectBattWS(){
+  if(g_battWs){
+    try{g_battWs.close();}catch(e){}
+    g_battWs = null;
+  }
+  var ip = document.getElementById('batt_ip').value.trim();
+  var port = document.getElementById('batt_port').value;
+  var url = 'ws://' + ip + ':' + port + '/ws';
+  g_battWs = new WebSocket(url);
+  g_battWs.onopen = function(){
+    g_battConnected = true;
+    updateBattConnUI();
+    addBattLog('电池 WebSocket 已连接 (' + ip + ':' + port + ')');
+  };
+  g_battWs.onclose = function(){
+    g_battConnected = false;
+    updateBattConnUI();
+    addBattLog('电池 WebSocket 断开');
+  };
+  g_battWs.onerror = function(){
+    g_battConnected = false;
+    updateBattConnUI();
+    addBattLog('电池 WebSocket 连接失败');
+  };
+  g_battWs.onmessage = function(e){
+    try{
+      var d = JSON.parse(e.data);
+      if(d.channel){
+        if(d.channel === 'battery_status'){ handleBattStatus(d.data); }
+        else if(d.channel === 'battery_fault'){ handleBattFault(d.data); }
+        else if(d.channel === 'battery_info'){ handleBattInfo(d.data); }
+      }
+    }catch(err){}
+  };
+}
+
+function disconnectBattWS(){
+  if(g_battWs){
+    try{g_battWs.close();}catch(e){}
+    g_battWs = null;
+  }
+  g_battConnected = false;
+  updateBattConnUI();
+  clearBattDisplay();
+}
+
+function clearBattDisplay(){
+  setBV('bv_total', '--<span class="bunit">mV</span>');
+  setBV('bv_current', '--<span class="bunit">mA</span>');
+  setBV('bv_temp', '--<span class="bunit">\u2103</span>');
+  setBV('bv_soc', '--<span class="bunit">%</span>');
+  setBV('bv_cap', '-- / --<span class="bunit">mAh</span>');
+  setBV('bv_cycles', '--');
+  setBV('bv_chg_cur', '--<span class="bunit">mA</span>');
+  setBV('bv_bms', '--');
+  setBVI('bv_ver', '--');
+  setBVI('bv_id', '--');
+  for(var i = 1; i <= 6; i++){ setBVI('bcv_' + i, '--'); }
+  var map = {charger_overvoltage:'bf_cov', charge_overcurrent:'bf_coc',
+    ntc_short:'bf_ns', ntc_open:'bf_no', cell_voltage_diff:'bf_cvd',
+    charge_timeout:'bf_cto', discharge_overcurrent:'bf_doc',
+    discharge_short:'bf_ds', secondary_overcharge:'bf_soc'};
+  for(var k in map){
+    var el = document.getElementById(map[k]);
+    if(el){ el.textContent = '--'; el.className = 'fval ok'; }
+  }
+}
+
+function refreshBattData(){
+  clearBattDisplay();
+  g_lastBattStatus = {};
+  g_lastBattFault = {};
+  var lb = document.getElementById('batt_log_body');
+  if(lb) lb.innerHTML = '';
+  addBattLog('已清除数据');
+  if(g_battWs && g_battWs.readyState === WebSocket.OPEN){
+    queryBattInfo();
+  }
+}
+
+function addBattLog(msg){
+  var lb = document.getElementById('batt_log_body');
+  if(!lb) return;
+  var now = new Date();
+  var ts = now.getHours().toString().padStart(2,'0') + ':' +
+           now.getMinutes().toString().padStart(2,'0') + ':' +
+           now.getSeconds().toString().padStart(2,'0');
+  var div = document.createElement('div');
+  div.style.whiteSpace = 'nowrap';
+  div.style.padding = '1px 0';
+  div.textContent = '[' + ts + '] ' + msg;
+  lb.appendChild(div);
+  while(lb.children.length > 20) lb.removeChild(lb.firstChild);
+  lb.scrollTop = lb.scrollHeight;
+}
+
+function updateBattConnUI(){
+  var btnC = document.getElementById('batt_btn_conn'), btnD = document.getElementById('batt_btn_disc');
+  var st = document.getElementById('batt_conn_status');
+  if(g_battConnected){
+    btnC.style.display = 'none'; btnD.style.display = 'inline-block';
+    btnC.classList.add('connected');
+    st.textContent = '已连接';
+  } else {
+    btnC.style.display = 'inline-block'; btnD.style.display = 'none';
+    btnC.classList.remove('connected');
+    st.textContent = '未连接';
+  }
+}
+
+function handleBattStatus(d){
+  if(!d) return;
+  g_lastBattStatus = d;
+  setBV('bv_total', (d.total_voltage_mv||0) + ' mV');
+  setBV('bv_current', (d.current_ma||0) + ' mA');
+  setBV('bv_temp', (d.temperature_c||0).toFixed(1) + ' \u2103');
+  setBV('bv_soc', (d.soc_percent||0) + '%');
+  setBV('bv_cap', (d.remain_capacity_mah||0) + ' / ' + (d.total_capacity_mah||0) + ' mAh');
+  setBV('bv_cycles', d.cycle_count||0);
+  setBV('bv_chg_cur', (d.charge_current_ma||0) + ' mA');
+  setBV('bv_bms', '0x' + ((d.bms_status||0) & 0xFF).toString(16).toUpperCase().padStart(2,'0'));
+
+  for(var i = 1; i <= 6; i++){
+    var el = document.getElementById('bcv_' + i);
+    if(el) el.textContent = (d['cell' + i + '_mv'] || 0) + ' mV';
+  }
+
+  var socCard = document.querySelector('#batt_status_cards .batt-card:nth-child(4)');
+  if(socCard){
+    socCard.className = 'batt-card' + (d.soc_percent < 20 ? ' err' : '');
+  }
+}
+
+function handleBattFault(d){
+  if(!d) return;
+  g_lastBattFault = d;
+  var map = {
+    charger_overvoltage:'bf_cov', charge_overcurrent:'bf_coc',
+    ntc_short:'bf_ns', ntc_open:'bf_no', cell_voltage_diff:'bf_cvd',
+    charge_timeout:'bf_cto', discharge_overcurrent:'bf_doc',
+    discharge_short:'bf_ds', secondary_overcharge:'bf_soc'
+  };
+  for(var k in map){
+    var el = document.getElementById(map[k]);
+    if(el){
+      var v = d[k];
+      el.textContent = v ? '异常' : '正常';
+      el.className = 'fval ' + (v ? 'err' : 'ok');
+    }
+  }
+}
+
+function handleBattInfo(d){
+  if(!d) return;
+  setBVI('bv_ver', d.version || '--');
+  setBVI('bv_id', d.id || '--');
+  addBattLog('版本: ' + (d.version || '--') + '  ID: ' + (d.id || '--'));
+}
+
+function sendBattCtrl(cmd){
+  if(!g_battWs || g_battWs.readyState !== WebSocket.OPEN){ alert('电池 WebSocket 未连接'); return; }
+  var p1 = 0, p2 = 0;
+  if(cmd === 1){
+    p1 = parseInt(document.getElementById('bctrl_power').value);
+  } else if(cmd === 2){
+    p1 = parseInt(document.getElementById('bctrl_charge').value);
+  }
+
+  g_battWs.send(JSON.stringify({channel:'battery_ctrl', cmd:cmd, param1:p1, param2:p2}));
+  addBattLog('发送控制: cmd=' + cmd + ' p1=' + p1);
+}
+
+function queryBattInfo(){
+  if(!g_battWs || g_battWs.readyState !== WebSocket.OPEN){ alert('电池 WebSocket 未连接'); return; }
+  g_battWs.send(JSON.stringify({channel:'battery_get_info'}));
+  addBattLog('查询版本/ID...');
+}
+
+function setBV(id, text){
+  var el = document.getElementById(id);
+  if(el) el.innerHTML = text;
+}
+
+function setBVI(id, text){
+  var el = document.getElementById(id);
+  if(el) el.textContent = text;
+}
+
+// ── init ──
+window.onload = function(){
+  setupChartMouse();
+  /* init battery tab if switching */
+  if(window.location.hash === '#batt'){
+    setTimeout(function(){ onSwitchTab('batt'); }, 500);
+  }
+};
+</script>
+</body>
+</html>

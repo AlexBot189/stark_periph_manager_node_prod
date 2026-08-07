@@ -1,0 +1,77 @@
+{
+  "can": {
+    "interface": "can0",
+    "arbitration_rate": 1000000,
+    "data_rate": 5000000
+  },
+  "motors": [
+    {
+      "id": 1,
+      "name": "right_hip",
+      "heartbeat_ms": 2000,
+      "profile_accel": 5000,
+      "profile_decel": 5000,
+      "profile_velocity": 20,
+      "disable_watchdog": true,
+      "auto_enable": true,
+      "tpdo_sync_count": 1
+    }
+  ],
+  "safety": {
+    "algo_timeout_ms": 200,
+    "algo_shutdown_ms": 500,
+    "overtemp_celsius": 80,
+    "can_offline_ms": 2000,
+    "encoder_stall_s": 3,
+    "heartbeat_timeout_ms": 0
+  },
+  "shm": {
+    "name": "/stark_shm",
+    "size_kb": 64
+  },
+  "rt": {
+    "control_priority": 90,
+    "control_period_us": 1000,
+    "report_divider": 5,
+    "cpu_affinity": [3]
+  },
+  "calib": {
+    "auto_calib": false,
+    "timeout_ms": 10000,
+    "threshold_deg": 1.0
+  },
+  "sensor": {
+    "period_div": 1,
+    "bus_format": 3,
+    "mode": 3,
+    "force_module": 1
+  },
+  "led": {
+    "motor_id": 0,
+    "init_off": true
+  },
+  "buttons": {
+    "calib":  { "gpio_chip": "gpiochip4", "line": 7 },
+    "report": { "gpio_chip": "gpiochip4", "line": 8 }
+  },
+  "imu": {
+    "i2c_dev": "/dev/i2c-3",
+    "gpio_chip": "gpiochip4",
+    "gpio_line": 6,
+    "op_mode": 5
+  },
+  "report": {
+    "auto_enable": true,
+    "period_ms": 5
+  },
+  "ros": {
+    "enabled": false,
+    "feedback_topic": "/stark/motor/feedback",
+    "state_topic": "/stark/motor/state",
+    "ctrl_sub_topic": "/stark/motor/ctrl"
+  },
+  "web": {
+    "enabled": false,
+    "port": 8080
+  }
+}
