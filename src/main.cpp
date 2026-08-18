@@ -133,6 +133,7 @@ int main(int argc, char** argv)
     g_node_ctx.led_motor_id       = g_dispatcher->GetLedMotorId();
     g_node_ctx.btn_calib_chip     = g_dispatcher->GetBtnCalibChip();
     g_node_ctx.btn_calib_line     = g_dispatcher->GetBtnCalibLine();
+    g_node_ctx.btn_calib_long_press_ms = g_dispatcher->GetBtnCalibLongPressMs();
     g_node_ctx.btn_report_chip    = g_dispatcher->GetBtnReportChip();
     g_node_ctx.btn_report_line    = g_dispatcher->GetBtnReportLine();
     g_node_ctx.calib_enable_after = g_dispatcher->GetMotorAutoEnable();

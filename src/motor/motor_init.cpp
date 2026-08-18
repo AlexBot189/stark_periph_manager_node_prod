@@ -426,6 +426,7 @@ bool CanDispatcher::LoadMotorConfig()
             if (btn.contains("calib")) {
                 m_btn_calib_chip = btn["calib"].value("gpio_chip", std::string{});
                 m_btn_calib_line = btn["calib"].value("line", -1);
+                m_btn_calib_long_press_ms = btn["calib"].value("long_press_ms", 5000);
             }
             if (btn.contains("report")) {
                 m_btn_report_chip = btn["report"].value("gpio_chip", std::string{});

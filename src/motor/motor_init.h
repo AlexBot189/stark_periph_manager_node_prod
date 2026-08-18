@@ -77,6 +77,7 @@ public:
     int      GetLedMotorId()       const { return m_led_motor_id; }
     const std::string& GetBtnCalibChip()  const { return m_btn_calib_chip; }
     int      GetBtnCalibLine()  const { return m_btn_calib_line; }
+    int      GetBtnCalibLongPressMs() const { return m_btn_calib_long_press_ms; }
     const std::string& GetBtnReportChip() const { return m_btn_report_chip; }
     int      GetBtnReportLine() const { return m_btn_report_line; }
     bool     GetWebEnabled()   const { return m_web_enabled; }
@@ -144,6 +145,7 @@ private:
     /* 按键 */
     std::string  m_btn_calib_chip;
     int          m_btn_calib_line  = -1;
+    int          m_btn_calib_long_press_ms = 5000;
     std::string  m_btn_report_chip;
     int          m_btn_report_line = -1;
 

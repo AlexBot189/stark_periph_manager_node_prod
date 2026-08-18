@@ -9,7 +9,7 @@
 
 CUR_DIR=$(pwd)
 export ECO_PROJECT_NAME=${CUR_DIR##*/}
-export ECO_WORKSPACE_DIR=~/workspace/project/k850/embuild
+export ECO_WORKSPACE_DIR=~/workspace/project/rv1126b/embuild
 export DETAILED_BUILDING_MESSAGE=true
 export ECO_PKG_PROJECT_NAME=${ECO_PROJECT_NAME}
 

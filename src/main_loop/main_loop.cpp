@@ -30,9 +30,29 @@ extern "C" {
 
 #ifdef ENABLE_ROS
 #include "ros/ros.h"
+#include <stark_msgs/PowerCtrl.h>
 #endif
 
 using namespace stark_periph_manager_node;
+
+/* 长按关机: 发布 PowerCtrl CTRL_SHUTDOWN, 由 power 节点处理 0x9001 */
+#ifdef ENABLE_ROS
+static void request_shutdown()
+{
+    static ros::NodeHandle nh;
+    static ros::Publisher pub = nh.advertise<stark_msgs::PowerCtrl>(
+        "/stark/power_ctrl", 1);
+    stark_msgs::PowerCtrl ctrl;
+    ctrl.cmd = stark_msgs::PowerCtrl::CTRL_SHUTDOWN;
+    pub.publish(ctrl);
+    ECO_INFO_NEW("[BTN] long press -> publish CTRL_SHUTDOWN");
+}
+#else
+static void request_shutdown()
+{
+    ECO_WARN_NEW("[BTN] long press ignored (ROS disabled)");
+}
+#endif
 
 /* 引用 main.cpp 中的全局变量 */
 extern volatile int g_running;
@@ -235,10 +255,12 @@ static void poll_booting(stark_shm_t* shm, int motor_count,
                         ButtonHandler::Config calib_cfg, report_cfg;
                         calib_cfg.gpio_chip  = g_ctx->btn_calib_chip;
                         calib_cfg.line       = g_ctx->btn_calib_line;
+                        calib_cfg.long_press_ms = g_ctx->btn_calib_long_press_ms;
                         report_cfg.gpio_chip = g_ctx->btn_report_chip;
                         report_cfg.line      = g_ctx->btn_report_line;
                         g_btn_handler.reset(new ButtonHandler(calib_cfg, report_cfg,
-                                                               shm, motor_count));
+                                                               shm, motor_count,
+                                                               request_shutdown));
                         ECO_INFO_NEW("[main] button handler started");
                     }
                 }

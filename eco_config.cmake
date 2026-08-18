@@ -5,7 +5,7 @@
 #
 ##########################
 
-set(EROSMSG_INCLUDE_PATH ${ECO_WORKSPACE_DIR}/eros/release/include)
+set(EROSMSG_INCLUDE_PATH ${ECO_WORKSPACE_DIR}/release/include)
 
 set(PROJECT_TYPE_NAME "rk3576")
 

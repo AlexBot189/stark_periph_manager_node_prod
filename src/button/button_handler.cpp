@@ -17,8 +17,11 @@ uint64_t ButtonHandler::nowUs()
 }
 
 ButtonHandler::ButtonHandler(const Config& calib, const Config& report,
-                             stark_shm_t* shm, int motor_count)
+                             stark_shm_t* shm, int motor_count,
+                             LongPressCallback long_press_cb)
     : m_shm(shm), m_motor_count(motor_count)
+    , m_long_press_ms(calib.long_press_ms > 0 ? calib.long_press_ms : 5000)
+    , m_long_press_cb(std::move(long_press_cb))
 {
     if (!calib.gpio_chip.empty() && calib.line >= 0) {
         m_calib_mon.reset(new GPIOMonitor(calib.gpio_chip));
@@ -54,6 +57,7 @@ void ButtonHandler::onCalibEdge(int line, int event_type)
 
     if (is_press) {
         m_calib_pressed.store(true, std::memory_order_release);
+        m_calib_press_us.store(now, std::memory_order_relaxed);
 
         int cnt = m_calib_cnt.load(std::memory_order_relaxed);
         uint64_t first = m_calib_first_us.load(std::memory_order_relaxed);
@@ -72,6 +76,7 @@ void ButtonHandler::onCalibEdge(int line, int event_type)
         }
     } else {
         m_calib_pressed.store(false, std::memory_order_release);
+        m_calib_press_us.store(0, std::memory_order_relaxed);
     }
 }
 
@@ -106,5 +111,17 @@ void ButtonHandler::poll()
         m_calib_trig.store(false, std::memory_order_relaxed);
         __atomic_store_n(&m_shm->calib_requested, 1, __ATOMIC_RELEASE);
         ECO_INFO_NEW("[BTN] calib triggered");
+    }
+
+    /* 长按检测: 按住满 long_press_ms 触发长按动作 (一次性) */
+    if (m_long_press_cb) {
+        uint64_t press_us = m_calib_press_us.load(std::memory_order_relaxed);
+        if (press_us && now - press_us >= (uint64_t)m_long_press_ms * 1000) {
+            m_calib_press_us.store(0, std::memory_order_relaxed);  /* 一次性, 防重复 */
+            m_calib_cnt.store(0, std::memory_order_relaxed);       /* 清击计数, 避免长按后误触校准 */
+            m_calib_first_us.store(0, std::memory_order_relaxed);
+            ECO_INFO_NEW("[BTN] long press triggered");
+            m_long_press_cb();
+        }
     }
 }

@@ -47,6 +47,7 @@ struct StarkNodeContext {
     /* 按键 */
     std::string  btn_calib_chip;
     int          btn_calib_line  = -1;
+    int          btn_calib_long_press_ms = 5000;
     std::string  btn_report_chip;
     int          btn_report_line = -1;
 

@@ -8,7 +8,7 @@
 cmake_minimum_required(VERSION 2.8.12)
 project(stark_periph_manager_node)
 
-option(ENABLE_ROS       "启用 ROS 适配器"   OFF)
+option(ENABLE_ROS       "启用 ROS 适配器"   ON)
 option(ENABLE_WEBSERVER "启用 Web 调试面板" ON)
 
 option(USE_CROSS_COMPILE "Use Cross-compile" ON)
