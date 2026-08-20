@@ -34,11 +34,14 @@
   },
   "rt": {
     "enable_rt": true,
+    "sync_enable": false,
     "control_priority": 90,
     "recv_priority": 85,
+    "recv_cpu": -1,
     "control_period_us": 1000,
     "report_divider": 1,
-    "cpu_affinity": [3]
+    "cpu_affinity": [3],
+    "perf_trace": true
   },
   "calib": {
     "auto_calib": false,

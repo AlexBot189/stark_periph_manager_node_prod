@@ -12,9 +12,9 @@
 
 uint64_t motor_utils_now_us(void)
 {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (uint64_t)tv.tv_sec * 1000000UL + (uint64_t)tv.tv_usec;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000UL + (uint64_t)ts.tv_nsec / 1000UL;
 }
 
 void motor_utils_sleep_ms(int ms)

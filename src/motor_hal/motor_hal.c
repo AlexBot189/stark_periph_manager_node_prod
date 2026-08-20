@@ -15,6 +15,7 @@
  *   utils           ,  工具函数
  */
 
+#define _GNU_SOURCE
 #include "motor_hal.h"
 
 #include "can_driver_internal.h"
@@ -185,6 +186,7 @@ struct motor_hal {
     bool         recv_running;
     bool         recv_rt_enable;
     int          recv_rt_priority;
+    int          recv_cpu;           /* 接收线程绑核 (-1=不绑) */
 
     /* SYNC 定时器线程 */
     pthread_t    sync_thread;
@@ -245,6 +247,7 @@ motor_hal_t* motor_hal_create(void)
 {
     motor_hal_t *hal = calloc(1, sizeof(motor_hal_t));
     if (!hal) return NULL;
+    hal->recv_cpu = -1;
 
     pthread_mutexattr_t ma;
     pthread_mutexattr_init(&ma);
@@ -1638,6 +1641,14 @@ static void* _recv_thread_fn(void *arg)
         pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
     }
 
+    /* 绑核: 与 RT 线程同核, 降低跨核迁移导致的反馈打点延迟 */
+    if (hal->recv_cpu >= 0) {
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(hal->recv_cpu, &cpuset);
+        pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+    }
+
     while (hal->recv_running) {
         canfd_frame_t f;
         int ret = can_driver_recv(hal->drv, &f, 100);
@@ -1673,6 +1684,12 @@ void motor_hal_recv_set_rt(motor_hal_t *hal, bool enable, int priority)
     if (!hal) return;
     hal->recv_rt_enable   = enable;
     hal->recv_rt_priority = priority;
+}
+
+void motor_hal_recv_set_affinity(motor_hal_t *hal, int cpu)
+{
+    if (!hal) return;
+    hal->recv_cpu = cpu;
 }
 
 int motor_hal_recv_stop(motor_hal_t *hal)

@@ -20,4 +20,5 @@ class StarkRtWorker;
 
 void main_loop_run(motor_hal_t* hal, stark_shm_t* shm,
                    int motor_count, stark_periph_manager_node::CanDispatcher* dispatcher,
-                   stark_periph_manager_node::StarkRtWorker* rt_worker, bool enable_rt);
+                   stark_periph_manager_node::StarkRtWorker* rt_worker, bool enable_rt,
+                   bool enable_sync);

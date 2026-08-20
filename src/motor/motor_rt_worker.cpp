@@ -52,6 +52,10 @@ StarkRtWorker::StarkRtWorker(motor_hal_t* hal, stark_shm_t* shm,
     , m_periodic_last_cycle(0)
     , m_cycle_count(0)
     , m_overrun_count(0)
+    , m_jitter_min_us(UINT32_MAX)
+    , m_jitter_max_us(0)
+    , m_jitter_acc_us(0)
+    , m_jitter_cnt(0)
 {
     memset(m_last_position, 0, sizeof(m_last_position));
     memset(m_pos_stall_us, 0, sizeof(m_pos_stall_us));
@@ -91,6 +95,7 @@ void StarkRtWorker::SetRtConfig(const RtConfig& cfg)
 {
     m_rt = cfg;
     m_report_divider      = cfg.report_divider;  /* 立即生效 */
+    m_tracer.SetEnabled(cfg.perf_trace);         /* 实时性能统计开关 (rt.perf_trace) */
 }
 
 void StarkRtWorker::SetReportEnabled(bool enabled, uint32_t period_ms)
@@ -126,6 +131,9 @@ void StarkRtWorker::Run()
     if (m_shm) {
         m_shm->rt_mode = m_rt.enable_rt ? 1 : 0;
         m_shm->period_us = (uint16_t)m_rt.period_us;
+        m_shm->rt_priority = (uint8_t)m_rt.priority;
+        m_shm->rt_cpu = (uint8_t)m_rt.cpu_affinity[0];
+        m_shm->perf_trace_enabled = m_rt.perf_trace ? 1 : 0;
     }
 
     struct timespec next_wake;
@@ -135,11 +143,21 @@ void StarkRtWorker::Run()
 
     while (m_running.load(std::memory_order_acquire)) {
 
+        /* 消费 perf_reset_request: web/算法下发"清空"→清零本轮 max, 重新累计 */
+        if (m_shm && __atomic_load_n(&m_shm->perf_reset_request, __ATOMIC_ACQUIRE)) {
+            __atomic_store_n(&m_shm->perf_reset_request, 0, __ATOMIC_RELEASE);
+            m_tracer.reset_run_max();
+            m_fb_age_max_run   = 0;
+            m_mbox_age_max_run = 0;
+            m_ctrl_max_run     = 0;
+            m_jitter_max_us    = 0;
+        }
+
         ProcessMgmt();
         ProcessMailbox();
         PublishFeedback();
 
-        /* ⑤ 提交延迟样本 */
+        /* ⑤ 提交延迟样本 (perf_trace 关闭时内部直接返回, 零开销) */
         m_tracer.commit_sample();
 
         m_cycle_count++;
@@ -155,9 +173,46 @@ void StarkRtWorker::Run()
 
         int ret = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
                                   &next_wake, nullptr);
+
+        /* 周期抖动统计 (仅 rt.perf_trace=true 时) :
+         * 实际唤醒时刻 - 理想目标时刻, 这是"错过截止期"的真实度量.
+         * 注意: clock_nanosleep 返回非0 = 被信号打断(EINTR), 并非超限;
+         * 原实现用 ret!=0 统计超限是错误的(永远≈0), 已修正为 actual>target. */
+        if (m_rt.perf_trace) {
+            struct timespec now_ts;
+            clock_gettime(CLOCK_MONOTONIC, &now_ts);
+            uint64_t actual_us = (uint64_t)now_ts.tv_sec * 1000000ULL + (uint64_t)now_ts.tv_nsec / 1000ULL;
+            uint64_t target_us = (uint64_t)next_wake.tv_sec * 1000000ULL + (uint64_t)next_wake.tv_nsec / 1000ULL;
+            if (actual_us > target_us) {
+                uint32_t j = (uint32_t)(actual_us - target_us);
+                if (j < m_jitter_min_us) m_jitter_min_us = j;
+                if (j > m_jitter_max_us) m_jitter_max_us = j;
+                m_jitter_acc_us += j;
+                m_jitter_cnt++;
+                m_overrun_count++;   /* 错过理想唤醒截止期 = 一次周期超限 */
+            }
+        }
+
+        /* 被信号打断(EINTR)等异常: 重新对齐绝对唤醒基准, 防止漂移 */
         if (ret != 0) {
-            m_overrun_count++;
             clock_gettime(CLOCK_MONOTONIC, &next_wake);
+        }
+
+        /* 每1000周期 (~1s): 输出周期抖动统计 */
+        if (m_rt.perf_trace && (m_cycle_count % 1000) == 0 && m_jitter_cnt > 0) {
+            uint32_t avg = (uint32_t)(m_jitter_acc_us / m_jitter_cnt);
+            RT_LOG("CycleJitter | min=%u avg=%u max=%u us (samples=%u) overrun=%llu",
+                   m_jitter_min_us, avg, m_jitter_max_us, m_jitter_cnt,
+                   (unsigned long long)m_overrun_count);
+            if (m_shm) {
+                m_shm->cycle_jitter_min_us = (uint16_t)(m_jitter_min_us > 65535 ? 65535 : m_jitter_min_us);
+                m_shm->cycle_jitter_avg_us = (uint16_t)(avg > 65535 ? 65535 : avg);
+                m_shm->cycle_jitter_max_us = m_jitter_max_us;
+            }
+            m_jitter_min_us = UINT32_MAX;
+            /* m_jitter_max_us 不清零 — 本轮累计, 由 perf_reset_request 清零 */
+            m_jitter_acc_us = 0;
+            m_jitter_cnt = 0;
         }
     }
 }
@@ -319,12 +374,6 @@ void StarkRtWorker::ProcessMailbox()
     if (r >= w) return;  /* 无新数据 */
 
     m_tracer.mark_mailbox_read();
-
-#if STARK_LATENCY_TRACE
-    struct timespec ts_mbox;
-    clock_gettime(CLOCK_MONOTONIC, &ts_mbox);
-    uint64_t mbox_read_us = (uint64_t)ts_mbox.tv_sec * 1000000ULL + (uint64_t)ts_mbox.tv_nsec / 1000ULL;
-#endif
 
     /* 消费所有待处理帧 */
     uint64_t count = w - r;
@@ -545,9 +594,12 @@ void StarkRtWorker::ProcessMailbox()
     /* 确认消费 */
     __atomic_store_n(&m_shm->mailbox.seq_read, r + count, __ATOMIC_RELEASE);
 
-#if STARK_LATENCY_TRACE
-    /* mbox_age: 算法写 mailbox → RT 读到 */
-    if (count > 0) {
+    /* mbox_age: 算法写 mailbox → RT 读到 (仅 rt.perf_trace 时统计) */
+    if (m_rt.perf_trace && count > 0) {
+        struct timespec ts_mbox;
+        clock_gettime(CLOCK_MONOTONIC, &ts_mbox);
+        uint64_t mbox_read_us = (uint64_t)ts_mbox.tv_sec * 1000000ULL + (uint64_t)ts_mbox.tv_nsec / 1000ULL;
+
         uint64_t last_idx = (r + count - 1) % STARK_MBOX_DEPTH;
         uint64_t min_ts = UINT64_MAX;
         for (int i = 0; i < STARK_MAX_MOTORS; i++) {
@@ -558,9 +610,8 @@ void StarkRtWorker::ProcessMailbox()
         if (min_ts != UINT64_MAX && mbox_read_us > min_ts)
             age = (uint32_t)(mbox_read_us - min_ts);
 
-        static uint32_t s_mbox_max = 0;
-        if (age > s_mbox_max) s_mbox_max = age;
-        m_shm->mbox_age_max_us = (uint16_t)(s_mbox_max > 65535 ? 65535 : s_mbox_max);
+        if (age > m_mbox_age_max_run) m_mbox_age_max_run = age;
+        m_shm->mbox_age_max_us = (uint16_t)(m_mbox_age_max_run > 65535 ? 65535 : m_mbox_age_max_run);
 
         static uint32_t s_mbox_sum = 0, s_mbox_min_win = UINT32_MAX;
         static uint16_t s_mbox_cnt = 0;
@@ -572,8 +623,11 @@ void StarkRtWorker::ProcessMailbox()
         }
         m_shm->mbox_age_avg_us = (uint16_t)(s_mbox_cnt > 0 ? s_mbox_sum / s_mbox_cnt : 0);
         m_shm->mbox_age_min_us = (uint16_t)(s_mbox_min_win != UINT32_MAX ? s_mbox_min_win : 0);
+
+        /* 记录算法下发时刻 (供端到端 ctrl_e2e = PDO发出 - 算法下发) */
+        if (min_ts != UINT64_MAX)
+            m_tracer.mark_ctrl_origin(min_ts);
     }
-#endif
 
     m_tracer.mark_pdo_sent();
 }
@@ -815,21 +869,20 @@ void StarkRtWorker::PublishFeedback()
     /* T1: 开始读 fb_cache */
     m_tracer.mark_fb_read_start();
 
-#if STARK_LATENCY_TRACE
-    struct timeval tv_rt;
-    gettimeofday(&tv_rt, NULL);
-    uint64_t read_rt_us = tv_rt.tv_sec * 1000000ULL + tv_rt.tv_usec;
-#endif
+    uint64_t read_rt_us = 0;
+    if (m_rt.perf_trace) {
+        struct timespec ts_rt;
+        clock_gettime(CLOCK_MONOTONIC, &ts_rt);
+        read_rt_us = (uint64_t)ts_rt.tv_sec * 1000000ULL + (uint64_t)ts_rt.tv_nsec / 1000ULL;
+    }
     uint64_t min_fb_ts = UINT64_MAX;
 
     /* 填充电机反馈 (从 HAL 反馈缓存) */
     for (uint8_t id = 1; id <= (uint8_t)m_motor_count; ++id) {
         motor_feedback_t mfb;
         if (motor_hal_get_feedback(m_hal, id, &mfb) == 0) {
-#if STARK_LATENCY_TRACE
-            if (mfb.timestamp_us > 0 && mfb.timestamp_us < read_rt_us && (read_rt_us - mfb.timestamp_us) < 10000 && mfb.timestamp_us < min_fb_ts)
+            if (m_rt.perf_trace && mfb.timestamp_us > 0 && mfb.timestamp_us < read_rt_us && (read_rt_us - mfb.timestamp_us) < 10000 && mfb.timestamp_us < min_fb_ts)
                 min_fb_ts = mfb.timestamp_us;
-#endif
             uint8_t idx = id - 1;
             fb->motor[idx].position    = mfb.position;
             fb->motor[idx].velocity    = mfb.velocity;
@@ -891,14 +944,18 @@ void StarkRtWorker::PublishFeedback()
     fb->ts_frame_assembly = fb->ts_shm_write;
     fb->timestamp_us      = fb->ts_shm_write;
 
+    /* 记录 CAN 收帧时刻 (供端到端 fb_e2e = SHM写完 - CAN收帧) */
+    if (m_rt.perf_trace && min_fb_ts != UINT64_MAX)
+        m_tracer.mark_fb_origin(min_fb_ts);
+
     /* 切换活跃 Buffer */
     __atomic_store_n(&m_shm->active_idx, write_idx, __ATOMIC_RELEASE);
 
     /* T4: SHM 双 Buffer 切换完成 */
     m_tracer.mark_shm_write_done();
 
-    /* 填充 SHM 耗时统计 (供 perf_test 读取) */
-    {
+    /* 填充 SHM 耗时统计 (供 web/perf_test 读取, 仅 rt.perf_trace 时) */
+    if (m_rt.perf_trace) {
         latency_stats_t st = {};
         m_tracer.fill_shm_stats(st);
         m_shm->fb_read_avg_us    = (uint16_t)st.fb_read_avg;
@@ -909,21 +966,18 @@ void StarkRtWorker::PublishFeedback()
         m_shm->ctrl_total_avg_us = (uint16_t)st.ctrl_total_avg;
         m_shm->ctrl_total_min_us = (uint16_t)st.ctrl_total_min;
         {
-            static uint32_t s_ctrl_max = 0;
-            if (st.ctrl_total_max > s_ctrl_max) s_ctrl_max = st.ctrl_total_max;
-            m_shm->ctrl_total_max_us = (uint16_t)(s_ctrl_max > 65535 ? 65535 : s_ctrl_max);
+            if (st.ctrl_total_max > m_ctrl_max_run) m_ctrl_max_run = st.ctrl_total_max;
+            m_shm->ctrl_total_max_us = (uint16_t)(m_ctrl_max_run > 65535 ? 65535 : m_ctrl_max_run);
         }
 
-#if STARK_LATENCY_TRACE
         /* 反馈数据年龄 (CAN 收帧 → RT worker 读到) */
         {
             uint32_t fb_age = 0;
             if (min_fb_ts != UINT64_MAX && read_rt_us > min_fb_ts)
                 fb_age = (uint32_t)(read_rt_us - min_fb_ts);
 
-            static uint32_t s_age_max = 0;
-            if (fb_age > s_age_max) s_age_max = fb_age;
-            m_shm->fb_age_max_us = (uint16_t)(s_age_max > 65535 ? 65535 : s_age_max);
+            if (fb_age > m_fb_age_max_run) m_fb_age_max_run = fb_age;
+            m_shm->fb_age_max_us = (uint16_t)(m_fb_age_max_run > 65535 ? 65535 : m_fb_age_max_run);
 
             static uint32_t s_age_sum = 0, s_age_min_win = UINT32_MAX;
             static uint16_t s_age_cnt = 0;
@@ -938,12 +992,19 @@ void StarkRtWorker::PublishFeedback()
             m_shm->fb_age_avg_us = (uint16_t)(s_age_cnt > 0 ? s_age_sum / s_age_cnt : 0);
             m_shm->fb_age_min_us = (uint16_t)(s_age_min_win != UINT32_MAX ? s_age_min_win : 0);
         }
-#endif
+
         m_shm->trace_cycle_count = st.cycle_count;
         m_shm->shm_write_avg_us  = (uint16_t)st.shm_write_avg;
-    }
 
-    m_shm->cycle_overrun_count = (uint16_t)(m_overrun_count & 0xFFFF);
+        m_shm->ctrl_e2e_avg_us = (uint16_t)st.ctrl_e2e_avg;
+        m_shm->ctrl_e2e_min_us = (uint16_t)st.ctrl_e2e_min;
+        m_shm->ctrl_e2e_max_us = st.ctrl_e2e_max;
+        m_shm->fb_e2e_avg_us   = (uint16_t)st.fb_e2e_avg;
+        m_shm->fb_e2e_min_us   = (uint16_t)st.fb_e2e_min;
+        m_shm->fb_e2e_max_us   = st.fb_e2e_max;
+
+        m_shm->cycle_overrun_count = (uint32_t)(m_overrun_count & 0xFFFFFFFFULL);
+    }
 }
 
 /*

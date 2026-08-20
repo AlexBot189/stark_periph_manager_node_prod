@@ -46,12 +46,12 @@ int motor_startup_wait_bootup(can_driver_t *drv __attribute__((unused)),
 int motor_startup_enable(can_driver_t *drv, uint8_t node_id)
 {
     int ret;
-
+#if 1
     /* Step A: Shutdown ,  Ready to Switch On */
     ret = sdo_write_simple(drv, node_id, OD_CONTROLWORD, 0x00, CW_SHUTDOWN, 2);
     if (ret != 0) return ret;
     usleep(20000);
-
+#endif
     /* Step B: Switch On ,  Switched On */
     ret = sdo_write_simple(drv, node_id, OD_CONTROLWORD, 0x00, CW_SWITCH_ON, 2);
     if (ret != 0) return ret;

@@ -210,7 +210,7 @@ static void poll_common(motor_hal_t* hal, stark_shm_t* shm, uint8_t motor_count)
  */
 
 static void poll_booting(stark_shm_t* shm, int motor_count,
-                         bool enable_rt, bool& sync_started)
+                         bool enable_rt, bool enable_sync, bool& sync_started)
 {
     if (!any_motor_online(shm, motor_count)) {
         g_boot_first_online_us = 0;
@@ -234,8 +234,15 @@ static void poll_booting(stark_shm_t* shm, int motor_count,
     if (!sync_started) {
         motor_hal_t* hal = g_ctx->hal;
         if (hal) {
-            int ret = motor_hal_sync_start(hal, 1000);  /* 1ms = 1KHz, 对齐用户要求 */
-            if (ret == 0) {
+            bool sync_ok = true;
+            if (enable_sync) {
+                int ret = motor_hal_sync_start(hal, 1000);  /* 1ms = 1KHz */
+                if (ret != 0) {
+                    sync_ok = false;
+                    ECO_WARN_NEW("[main] SYNC start failed (ret={}), will retry", ret);
+                }
+            }
+            if (sync_ok) {
                 sync_started = true;
                 if (!g_sdo_telemetry_started) {
                     motor_hal_sdo_telemetry_start(hal);
@@ -264,9 +271,10 @@ static void poll_booting(stark_shm_t* shm, int motor_count,
                         ECO_INFO_NEW("[main] button handler started");
                     }
                 }
-                ECO_INFO_NEW("[main] SYNC thread started (1KHz)");
-            } else {
-                ECO_WARN_NEW("[main] SYNC start failed (ret={}), will retry", ret);
+                if (enable_sync)
+                    ECO_INFO_NEW("[main] SYNC thread started (1KHz)");
+                else
+                    ECO_INFO_NEW("[main] SYNC thread disabled (sync_enable=false)");
             }
         }
     }
@@ -442,7 +450,18 @@ static void poll_ready(motor_hal_t* hal, stark_shm_t* shm, int motor_count)
                              g_ctx->report_period_ms);
             }
             state_transition(STATE_RUNNING);
-        }
+	} else if (result == MOTOR_CALIB_FAILED) {
+		ECO_ERROR_NEW("[main] calibration FAILED (mode set error)");
+		g_ctx->calib_done   = false;
+		g_ctx->calib_running = false;
+		g_calib_triggered   = false;
+		motor_calib_destroy((motor_calib_t*)g_ctx->calib_ctx);
+		g_ctx->calib_ctx = nullptr;
+
+		if (g_rt_worker) g_rt_worker->SetActive(true);
+		if (shm) shm->calib_state = 3;
+		/* 不 state_transition(STATE_RUNNING)，保持当前状态等待重试 */
+	}
     }
 }
 
@@ -568,7 +587,7 @@ static void poll_led_commands(motor_hal_t* hal, stark_shm_t* shm, int led_motor_
 
 void main_loop_run(motor_hal_t* hal, stark_shm_t* shm,
                    int motor_count, CanDispatcher* dispatcher,
-                   StarkRtWorker* rt_worker, bool enable_rt)
+                   StarkRtWorker* rt_worker, bool enable_rt, bool enable_sync)
 {
     (void)dispatcher;  /* 通过 g_dispatcher 全局变量访问 */
     (void)rt_worker;   /* 通过 g_rt_worker 全局变量访问 */
@@ -588,7 +607,7 @@ void main_loop_run(motor_hal_t* hal, stark_shm_t* shm,
         /* 状态分发 */
         switch (g_stark_state) {
         case STATE_BOOTING:
-            poll_booting(shm, motor_count, enable_rt, sync_started);
+            poll_booting(shm, motor_count, enable_rt, enable_sync, sync_started);
             break;
         case STATE_READY:
             poll_ready(hal, shm, motor_count);

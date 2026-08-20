@@ -179,7 +179,8 @@ int main(int argc, char** argv)
     /* 步骤 5: 主循环 (非阻塞, 状态分发) */
 
     main_loop_run(hal, shm, motor_count, g_dispatcher, g_rt_worker,
-                  g_dispatcher->GetRtConfig().enable_rt);
+                  g_dispatcher->GetRtConfig().enable_rt,
+                  g_dispatcher->GetRtConfig().sync_enable);
 
     /* 步骤 6: 清理 */
 

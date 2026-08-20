@@ -638,6 +638,17 @@ int motor_hal_recv_start(motor_hal_t *hal);
 void motor_hal_recv_set_rt(motor_hal_t *hal, bool enable, int priority);
 
 /**
+ * @brief 设置接收线程 CPU 亲和性 (绑核)
+ *
+ * 必须在 motor_hal_recv_start 之前调用。
+ * 建议绑到与 RT 线程相同的核, 共享 cache 降低反馈读取延迟。
+ *
+ * @param hal HAL 实例
+ * @param cpu 绑定的 CPU 核编号 (-1=不绑, 跟随系统调度)
+ */
+void motor_hal_recv_set_affinity(motor_hal_t *hal, int cpu);
+
+/**
  * @brief 停止接收线程
  *
  * 阻塞等待线程退出 (pthread_join)。

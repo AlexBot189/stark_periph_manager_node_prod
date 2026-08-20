@@ -112,6 +112,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .ps-value.sched_other{color:#f59e0b}
 .perf-clear-btn{background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:4px 14px;border-radius:4px;cursor:pointer;font-size:0.75em;font-weight:600;margin-left:auto}
 .perf-clear-btn:hover{background:#fee2e2}
+.perf-actions{display:flex;align-items:center;gap:8px;margin-left:auto}
+.perf-btn{background:#fff;color:#0f172a;border:1px solid #cbd5e1;padding:4px 14px;border-radius:4px;cursor:pointer;font-size:0.75em;font-weight:600}
+.perf-btn:hover{background:#f1f5f9;border-color:#94a3b8}
+.perf-btn.active{background:#e0f2fe;color:#0369a1;border-color:#7dd3fc}
+.ps-value.grade_good{color:#16a34a}
+.ps-value.grade_ok{color:#f59e0b}
+.ps-value.grade_bad{color:#dc2626}
+.ps-value.on{color:#16a34a}
+.ps-value.off{color:#94a3b8}
 
 /* latency tables */
 .perf-latency-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -120,8 +129,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .plt-row{display:flex;align-items:center;padding:10px 14px;border-bottom:1px solid #f1f5f9;gap:10px}
 .plt-row:last-child{border-bottom:none}
 .plt-row.empty{padding:0;min-height:53px}
-.plt-k{width:36px;font-size:0.72em;color:#94a3b8;font-weight:600;text-align:right}
-.plt-v{flex:1;font-size:1.5em;font-weight:700;color:#0f172a;font-family:'SF Mono','Cascadia Code','Consolas',monospace;text-align:center}
+.plt-k{width:64px;font-size:0.72em;color:#94a3b8;font-weight:600;text-align:right;white-space:nowrap}
+.plt-v{flex:1;font-size:1.05em;font-weight:700;color:#0f172a;font-family:'SF Mono','Cascadia Code','Consolas',monospace;text-align:center}
 .plt-u{width:24px;font-size:0.7em;color:#94a3b8}
 .perf-chart-box{background:#fff;border-radius:10px;padding:12px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
 .perf-chart-box h4{color:#0284c7;font-size:0.78em;font-weight:700;margin-bottom:8px}
@@ -412,8 +421,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <span class="ps-value" id="pm_mode">--</span>
     </div>
     <div class="perf-status-item">
+      <span class="ps-label">优先级</span>
+      <span class="ps-value" id="pm_prio">--</span>
+    </div>
+    <div class="perf-status-item">
+      <span class="ps-label">绑核</span>
+      <span class="ps-value" id="pm_cpu">--</span>
+    </div>
+    <div class="perf-status-item">
       <span class="ps-label">周期</span>
       <span class="ps-value" id="pm_period">--</span>
+    </div>
+    <div class="perf-status-item">
+      <span class="ps-label">统计</span>
+      <span class="ps-value" id="pm_trace">--</span>
+    </div>
+    <div class="perf-status-item">
+      <span class="ps-label">实时性</span>
+      <span class="ps-value" id="pm_grade">--</span>
     </div>
     <div class="perf-status-item">
       <span class="ps-label">超限</span>
@@ -423,40 +448,57 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <span class="ps-label">超限速率</span>
       <span class="ps-value" id="pm_overrun_rate">0/min</span>
     </div>
-    <button class="perf-clear-btn" onclick="clearPerfData()">清空数据</button>
+    <div class="perf-actions">
+      <button class="perf-btn" id="pm_pause_btn" onclick="togglePerfPause()">暂停</button>
+      <button class="perf-btn" onclick="refreshPerfPanel()">刷新</button>
+      <button class="perf-btn" onclick="savePerfCsv()">保存 CSV</button>
+      <button class="perf-clear-btn" onclick="clearPerfData()">清空</button>
+    </div>
   </div>
 
   <!-- latency tables -->
   <div class="perf-latency-row">
     <div class="perf-lat-table">
-      <div class="plt-header">反馈延迟</div>
-      <div class="plt-row"><span class="plt-k">Min</span><span class="plt-v" id="pm_fb_min">--</span><span class="plt-u">μs</span></div>
-      <div class="plt-row"><span class="plt-k">Avg</span><span class="plt-v" id="pm_fb_avg">--</span><span class="plt-u">μs</span></div>
-      <div class="plt-row"><span class="plt-k">Max</span><span class="plt-v" id="pm_fb_max">--</span><span class="plt-u">μs</span></div>
-      <div class="plt-row"><span class="plt-k">SHM</span><span class="plt-v" id="pm_shm_age">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-header">下行 · 算法 → 电机 (Ctrl)</div>
+      <div class="plt-row"><span class="plt-k">命令入队</span><span class="plt-v" id="pm_mbox_min">--</span><span class="plt-v" id="pm_mbox_avg">--</span><span class="plt-v" id="pm_mbox_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">指令下发</span><span class="plt-v" id="pm_ctrl_min">--</span><span class="plt-v" id="pm_ctrl_avg">--</span><span class="plt-v" id="pm_ctrl_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">端到端</span><span class="plt-v" id="pm_ctrl_e2e_min">--</span><span class="plt-v" id="pm_ctrl_e2e_avg">--</span><span class="plt-v" id="pm_ctrl_e2e_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row" style="border-bottom:none;padding-top:2px;padding-bottom:2px;color:#94a3b8;font-size:0.68em"><span class="plt-k"></span><span style="flex:1;text-align:center">Min</span><span style="flex:1;text-align:center">Avg</span><span style="flex:1;text-align:center">Max</span><span class="plt-u"></span></div>
     </div>
     <div class="perf-lat-table">
-      <div class="plt-header">控制延迟</div>
-      <div class="plt-row"><span class="plt-k">Min</span><span class="plt-v" id="pm_ctrl_min">--</span><span class="plt-u">μs</span></div>
-      <div class="plt-row"><span class="plt-k">Avg</span><span class="plt-v" id="pm_ctrl_avg">--</span><span class="plt-u">μs</span></div>
-      <div class="plt-row"><span class="plt-k">Max</span><span class="plt-v" id="pm_ctrl_max">--</span><span class="plt-u">μs</span></div>
-      <div class="plt-header" style="margin-top:8px">命令通道</div>
-      <div class="plt-row"><span class="plt-k">Min</span><span class="plt-v" id="pm_mbox_age_min">--</span><span class="plt-u">μs</span></div>
-      <div class="plt-row"><span class="plt-k">Avg</span><span class="plt-v" id="pm_mbox_age_avg">--</span><span class="plt-u">μs</span></div>
-      <div class="plt-row"><span class="plt-k">Max</span><span class="plt-v" id="pm_mbox_age_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-header">上行 · 电机 → 算法 (Fb)</div>
+      <div class="plt-row"><span class="plt-k">CAN收帧</span><span class="plt-v" id="pm_fb_age_min">--</span><span class="plt-v" id="pm_fb_age_avg">--</span><span class="plt-v" id="pm_fb_age_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">反馈处理</span><span class="plt-v" id="pm_fb_total_min">--</span><span class="plt-v" id="pm_fb_total_avg">--</span><span class="plt-v" id="pm_fb_total_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">端到端</span><span class="plt-v" id="pm_fb_e2e_min">--</span><span class="plt-v" id="pm_fb_e2e_avg">--</span><span class="plt-v" id="pm_fb_e2e_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row" style="border-bottom:none;padding-top:2px;padding-bottom:2px;color:#94a3b8;font-size:0.68em"><span class="plt-k"></span><span style="flex:1;text-align:center">Min</span><span style="flex:1;text-align:center">Avg</span><span style="flex:1;text-align:center">Max</span><span class="plt-u"></span></div>
     </div>
+  </div>
+
+  <!-- RT jitter -->
+  <div class="perf-lat-table">
+    <div class="plt-header">RT 周期抖动 (理想唤醒 vs 实际唤醒) — 实时内核的核心差异指标</div>
+    <div class="plt-row">
+      <span class="plt-k">抖动</span>
+      <span class="plt-v" id="pm_jit_min">--</span>
+      <span class="plt-v" id="pm_jit_avg">--</span>
+      <span class="plt-v" id="pm_jit_max">--</span>
+      <span class="plt-u">μs</span>
+    </div>
+    <div class="plt-row" style="border-bottom:none;padding-top:2px;padding-bottom:2px;color:#94a3b8;font-size:0.68em"><span class="plt-k"></span><span style="flex:1;text-align:center">Min</span><span style="flex:1;text-align:center">Avg</span><span style="flex:1;text-align:center">Max</span><span class="plt-u"></span></div>
   </div>
 
   <!-- charts -->
   <div class="perf-chart-box">
-    <h4>反馈延迟趋势 (fb_max, 最近 60 帧)</h4>
-    <canvas id="perf_canvas_fb"></canvas>
+    <h4>端到端延迟趋势 (最近 60 帧, Max 值)</h4>
+    <canvas id="perf_canvas_e2e"></canvas>
   </div>
 
   <div class="perf-chart-box">
-    <h4>控制延迟趋势 (ctrl_max, 最近 60 帧)</h4>
-    <canvas id="perf_canvas_ctrl"></canvas>
+    <h4>RT 周期抖动趋势 (最近 60 帧, Max 值)</h4>
+    <canvas id="perf_canvas_jitter"></canvas>
   </div>
+
+  <div class="perf-summary" id="pm_summary">等待数据…</div>
 
 </div>
 <!-- /panel_perf -->
@@ -526,20 +568,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div style="font-size:0.8em;margin-top:4px;clear:both">版本: <span id="bv_ver" style="font-weight:600">--</span> &nbsp;|&nbsp; ID: <span id="bv_id" style="font-weight:600">--</span></div>
   </div>
 
-  <!-- fault status -->
+  <!-- fault status (只显示触发的故障) -->
   <div class="batt-card">
     <div class="blabel" style="margin-bottom:6px">故障状态</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px" id="batt_fault_grid">
-      <div class="batt-fault-row"><span class="flbl">充电器过压</span><span class="fval ok" id="bf_cov">正常</span></div>
-      <div class="batt-fault-row"><span class="flbl">充电过流</span><span class="fval ok" id="bf_coc">正常</span></div>
-      <div class="batt-fault-row"><span class="flbl">NTC短路</span><span class="fval ok" id="bf_ns">正常</span></div>
-      <div class="batt-fault-row"><span class="flbl">NTC断路</span><span class="fval ok" id="bf_no">正常</span></div>
-      <div class="batt-fault-row"><span class="flbl">电芯压差</span><span class="fval ok" id="bf_cvd">正常</span></div>
-      <div class="batt-fault-row"><span class="flbl">充电超时</span><span class="fval ok" id="bf_cto">正常</span></div>
-      <div class="batt-fault-row"><span class="flbl">放电过流</span><span class="fval ok" id="bf_doc">正常</span></div>
-      <div class="batt-fault-row"><span class="flbl">放电短路</span><span class="fval ok" id="bf_ds">正常</span></div>
-      <div class="batt-fault-row"><span class="flbl">二级过充</span><span class="fval ok" id="bf_soc">正常</span></div>
-    </div>
+    <div id="batt_fault_grid"></div>
   </div>
 
   <!-- battery log -->
@@ -569,10 +601,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </div>
   </div>
 
-  <!-- CC fast charge placeholder -->
-  <div class="batt-placeholder">
-    <h4>⚡ CC快充控制 & 充电数据显示</h4>
-    <p>预留接口，即将支持</p>
+  <!-- 充电状态 -->
+  <div class="batt-card">
+    <div class="blabel" style="margin-bottom:6px">⚡ 充电状态</div>
+    <div class="batt-statusbar" style="grid-template-columns:repeat(auto-fill, minmax(115px, 1fr))">
+      <div class="batt-card"><div class="blabel">充电状态</div><div class="bvalue" id="pv_state">--</div></div>
+      <div class="batt-card"><div class="blabel">充电阶段</div><div class="bvalue" id="pv_phase">--</div></div>
+      <div class="batt-card"><div class="blabel">充电进行中</div><div class="bvalue" id="pv_active">--</div></div>
+      <div class="batt-card"><div class="blabel">充满</div><div class="bvalue" id="pv_full">--</div></div>
+      <div class="batt-card"><div class="blabel">适配器</div><div class="bvalue" id="pv_adapter">--</div></div>
+      <div class="batt-card"><div class="blabel">充电MOS</div><div class="bvalue" id="pv_cmos">--</div></div>
+      <div class="batt-card"><div class="blabel">放电MOS</div><div class="bvalue" id="pv_dmos">--</div></div>
+      <div class="batt-card"><div class="blabel">主控控制</div><div class="bvalue" id="pv_mctrl">--</div></div>
+      <div class="batt-card"><div class="blabel">故障</div><div class="bvalue" id="pv_fault">--</div></div>
+    </div>
+  </div>
+
+  <!-- 充电曲线 -->
+  <div class="batt-card">
+    <div class="blabel" style="margin-bottom:6px">📈 充电曲线
+      <button onclick="togglePowerChart()" id="powerPauseBtn" style="float:right;background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd;padding:2px 10px;border-radius:3px;cursor:pointer;font-size:0.75em;font-weight:600;margin-left:4px">⏸️ 暂停</button>
+      <button onclick="savePowerCSV()" style="float:right;background:#fffbeb;color:#b45309;border:1px solid #fcd34d;padding:2px 10px;border-radius:3px;cursor:pointer;font-size:0.75em;font-weight:600">📥 保存CSV</button>
+      <button onclick="resetPowerChart()" style="float:right;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:2px 10px;border-radius:3px;cursor:pointer;font-size:0.75em;font-weight:600;margin-left:4px">🔄 刷新</button>
+    </div>
+    <div style="height:300px;position:relative;border:1px solid #e2e8f0;border-radius:6px"><canvas id="power_chart" style="width:100%;height:100%"></canvas></div>
   </div>
 </div>
 
@@ -1312,6 +1364,7 @@ function onSwitchTab(tab){
   var bp = document.getElementById('panel_batt');
   if(tab === 'batt'){
     bp.classList.add('show');
+    setTimeout(function(){ drawPowerChart(); }, 50);
   } else {
     bp.classList.remove('show');
   }
@@ -1322,46 +1375,111 @@ function onSwitchTab(tab){
 }
 
 // ── perf monitoring ──
-var g_perfFbMax = [];       /* last 60 feedback max samples */
-var g_perfCtrlMax = [];     /* last 60 control max samples */
+var g_perfCtrlE2eMax = [];   /* ctrl_e2e_max 历史 (最近60) */
+var g_perfFbE2eMax = [];     /* fb_e2e_max 历史 (最近60) */
+var g_perfJitterMax = [];    /* jitter_max 历史 (最近60) */
+var g_perfSnapshots = [];    /* 保存 CSV 的快照 (最多1000) */
 var g_perfOverrun = 0;
 var g_perfLastOverrun = 0;
 var g_perfOverrunTs = 0;
 var g_perfOverrunRate = 0;
-var g_perfTotalFrames = 0;
 var g_perfRtMode = 0;
+var g_perfPaused = false;
 var g_perfLastUpdate = 0;
+var g_perfLast = null;       /* 最后一份服务端快照, 供刷新/CSV */
 
 function clearPerfData(){
-  g_perfFbMax = [];
-  g_perfCtrlMax = [];
+  if(g_ws && g_connected){ try{g_ws.send('{"cmd":"perf_reset"}');}catch(e){} }
+  g_perfCtrlE2eMax = [];
+  g_perfFbE2eMax = [];
+  g_perfJitterMax = [];
+  g_perfSnapshots = [];
   g_perfOverrun = 0;
   g_perfLastOverrun = 0;
   g_perfOverrunTs = 0;
   g_perfOverrunRate = 0;
-  g_perfTotalFrames = 0;
   g_perfRtMode = 0;
-  /* reset UI */
+  g_perfLast = null;
+  resetPerfUI();
+  drawPerfCharts();
+}
+
+function refreshPerfPanel(){
+  g_perfCtrlE2eMax = [];
+  g_perfFbE2eMax = [];
+  g_perfJitterMax = [];
+  g_perfSnapshots = [];
+  g_perfOverrun = 0;
+  g_perfLastOverrun = 0;
+  g_perfOverrunTs = 0;
+  g_perfOverrunRate = 0;
+  if(g_perfLast){ g_perfLastUpdate = 0; renderPerfPanel(g_perfLast); }
+  drawPerfCharts();
+}
+
+function togglePerfPause(){
+  g_perfPaused = !g_perfPaused;
+  var btn = document.getElementById('pm_pause_btn');
+  if(btn){
+    btn.textContent = g_perfPaused ? '继续' : '暂停';
+    btn.className = 'perf-btn' + (g_perfPaused ? ' active' : '');
+  }
+}
+
+function resetPerfUI(){
   var me = document.getElementById('pm_mode');
   if(me){ me.textContent = '--'; me.className = 'ps-value'; }
+  var ids = ['pm_prio','pm_cpu','pm_trace','pm_grade'];
+  for(var i = 0; i < ids.length; i++){
+    var el = document.getElementById(ids[i]);
+    if(el){ el.textContent = '--'; el.className = 'ps-value'; }
+  }
+  var pe = document.getElementById('pm_period');
+  if(pe) pe.textContent = '--';
   var oe = document.getElementById('pm_overrun');
   if(oe) oe.textContent = '0';
   var or = document.getElementById('pm_overrun_rate');
   if(or) or.textContent = '0/min';
-  var ids = ['pm_fb_min','pm_fb_avg','pm_fb_max','pm_shm_age','pm_ctrl_min','pm_ctrl_avg','pm_ctrl_max','pm_mbox_age_min','pm_mbox_age_avg','pm_mbox_age_max'];
-  for(var i = 0; i < ids.length; i++){
-    var el = document.getElementById(ids[i]);
-    if(el) el.textContent = '--';
+  var vids = ['pm_mbox_min','pm_mbox_avg','pm_mbox_max',
+    'pm_ctrl_min','pm_ctrl_avg','pm_ctrl_max',
+    'pm_ctrl_e2e_min','pm_ctrl_e2e_avg','pm_ctrl_e2e_max',
+    'pm_fb_age_min','pm_fb_age_avg','pm_fb_age_max',
+    'pm_fb_total_min','pm_fb_total_avg','pm_fb_total_max',
+    'pm_fb_e2e_min','pm_fb_e2e_avg','pm_fb_e2e_max',
+    'pm_jit_min','pm_jit_avg','pm_jit_max'];
+  for(var j = 0; j < vids.length; j++){
+    var el2 = document.getElementById(vids[j]);
+    if(el2) el2.textContent = '--';
   }
-  drawPerfCharts();
+  var sum = document.getElementById('pm_summary');
+  if(sum) sum.textContent = '等待数据…';
+}
+
+function pushPerfSample(arr, val){
+  if(val === undefined || val === null) return;
+  arr.push(val);
+  if(arr.length > 60) arr.shift();
+}
+
+function evalPerfGrade(jitterMax, periodUs){
+  if(jitterMax === undefined || jitterMax === null || jitterMax <= 0) return {label:'--', cls:''};
+  var period = periodUs || 1000;
+  var ratio = jitterMax / period;
+  if(ratio < 0.1) return {label:'优', cls:'grade_good'};
+  if(ratio < 0.3) return {label:'良', cls:'grade_ok'};
+  return {label:'差', cls:'grade_bad'};
 }
 
 function updatePerfPanel(d){
+  g_perfLast = d;
+  if(g_perfPaused) return;   /* 暂停时冻结 UI 与历史, 仅保留快照 */
+
   var now = Date.now();
   if(now - g_perfLastUpdate < 500 && g_currentTab !== 'perf') return;
   g_perfLastUpdate = now;
 
   if(d.rt_mode !== undefined) g_perfRtMode = d.rt_mode;
+
   if(d.overrun !== undefined){
     if(g_perfOverrunTs > 0){
       var dt_min = (now - g_perfOverrunTs) / 60000;
@@ -1373,22 +1491,31 @@ function updatePerfPanel(d){
     g_perfOverrunTs = now;
     g_perfOverrun = d.overrun;
   }
-  g_perfTotalFrames++;
 
-  /* latency history (server-side authoritative values) */
-  if(d.fb_max !== undefined){
-    g_perfFbMax.push(d.fb_max);
-    if(g_perfFbMax.length > 60) g_perfFbMax.shift();
-  }
-  if(d.ctrl_max !== undefined){
-    g_perfCtrlMax.push(d.ctrl_max);
-    if(g_perfCtrlMax.length > 60) g_perfCtrlMax.shift();
+  /* 历史趋势 (端到端/抖动 max) */
+  pushPerfSample(g_perfCtrlE2eMax, d.ctrl_e2e_max);
+  pushPerfSample(g_perfFbE2eMax, d.fb_e2e_max);
+  pushPerfSample(g_perfJitterMax, d.jitter_max);
+
+  /* 快照 (CSV 保存) */
+  if(g_perfSnapshots.length < 1000){
+    g_perfSnapshots.push({
+      t: new Date().toISOString(),
+      rt_mode: d.rt_mode, period_us: d.period_us,
+      ctrl_e2e_avg: d.ctrl_e2e_avg, ctrl_e2e_max: d.ctrl_e2e_max,
+      fb_e2e_avg: d.fb_e2e_avg, fb_e2e_max: d.fb_e2e_max,
+      jitter_avg: d.jitter_avg, jitter_max: d.jitter_max,
+      overrun: d.overrun
+    });
   }
 
-  /* status bar */
+  renderPerfPanel(d);
+}
+
+function renderPerfPanel(d){
   var modeEl = document.getElementById('pm_mode');
   if(modeEl){
-    if(g_perfRtMode){
+    if(d.rt_mode){
       modeEl.textContent = 'SCHED_FIFO';
       modeEl.className = 'ps-value sched_fifo';
     } else {
@@ -1396,28 +1523,82 @@ function updatePerfPanel(d){
       modeEl.className = 'ps-value sched_other';
     }
   }
+  setPV('pm_prio', d.rt_priority);
+  setPV('pm_cpu', d.rt_cpu);
+  var pEl = document.getElementById('pm_period');
+  if(pEl && d.period_us !== undefined) pEl.textContent = d.period_us + ' μs';
+
+  var trEl = document.getElementById('pm_trace');
+  if(trEl){
+    if(d.perf_trace){
+      trEl.textContent = '开启';
+      trEl.className = 'ps-value on';
+    } else {
+      trEl.textContent = '关闭';
+      trEl.className = 'ps-value off';
+    }
+  }
+
+  var gEl = document.getElementById('pm_grade');
+  if(gEl){
+    var g = evalPerfGrade(d.jitter_max, d.period_us);
+    gEl.textContent = g.label;
+    gEl.className = 'ps-value ' + g.cls;
+  }
+
   var ovEl = document.getElementById('pm_overrun');
   if(ovEl) ovEl.textContent = g_perfOverrun;
   var ovRate = document.getElementById('pm_overrun_rate');
   if(ovRate) ovRate.textContent = g_perfOverrunRate.toFixed(1) + '/min';
 
-  /* latency tables (direct from server JSON) */
-  setPV('pm_fb_min', d.fb_min);
-  setPV('pm_fb_avg', d.fb_avg);
-  setPV('pm_fb_max', d.fb_max);
-  setPV('pm_shm_age', d.shm_age);
-  setPV('pm_ctrl_min', d.ctrl_min);
-  setPV('pm_ctrl_avg', d.ctrl_avg);
-  setPV('pm_ctrl_max', d.ctrl_max);
-  setPV('pm_mbox_age_min', d.mbox_age_min);
-  setPV('pm_mbox_age_avg', d.mbox_age_avg);
-  setPV('pm_mbox_age_max', d.mbox_age_max);
+  /* 下行 Ctrl */
+  setPV('pm_mbox_min', d.mbox_age_min); setPV('pm_mbox_avg', d.mbox_age_avg); setPV('pm_mbox_max', d.mbox_age_max);
+  setPV('pm_ctrl_min', d.ctrl_total_min); setPV('pm_ctrl_avg', d.ctrl_total_avg); setPV('pm_ctrl_max', d.ctrl_total_max);
+  setPV('pm_ctrl_e2e_min', d.ctrl_e2e_min); setPV('pm_ctrl_e2e_avg', d.ctrl_e2e_avg); setPV('pm_ctrl_e2e_max', d.ctrl_e2e_max);
+  /* 上行 Fb */
+  setPV('pm_fb_age_min', d.fb_age_min); setPV('pm_fb_age_avg', d.fb_age_avg); setPV('pm_fb_age_max', d.fb_age_max);
+  setPV('pm_fb_total_min', d.fb_total_min); setPV('pm_fb_total_avg', d.fb_total_avg); setPV('pm_fb_total_max', d.fb_total_max);
+  setPV('pm_fb_e2e_min', d.fb_e2e_min); setPV('pm_fb_e2e_avg', d.fb_e2e_avg); setPV('pm_fb_e2e_max', d.fb_e2e_max);
+  /* 抖动 */
+  setPV('pm_jit_min', d.jitter_min); setPV('pm_jit_avg', d.jitter_avg); setPV('pm_jit_max', d.jitter_max);
 
-  /* RT period (from server, with unit) */
-  var pEl = document.getElementById('pm_period');
-  if(pEl && d.period_us !== undefined) pEl.textContent = d.period_us + ' \u03bcs';
+  var sum = document.getElementById('pm_summary');
+  if(sum){
+    sum.textContent = '已采样 ' + (d.trace_cycles !== undefined ? d.trace_cycles : 0) + ' 个周期 · ' +
+      '调度 ' + (d.rt_mode ? 'SCHED_FIFO' : 'SCHED_OTHER') +
+      (d.rt_priority !== undefined ? ' prio ' + d.rt_priority : '') +
+      (d.rt_cpu !== undefined ? ' core ' + d.rt_cpu : '') +
+      ' · 抖动 max ' + (d.jitter_max !== undefined ? d.jitter_max : '--') + ' μs' +
+      ' · 端到端 ctrl ' + (d.ctrl_e2e_avg !== undefined ? d.ctrl_e2e_avg : '--') + ' μs' +
+      ' / fb ' + (d.fb_e2e_avg !== undefined ? d.fb_e2e_avg : '--') + ' μs';
+  }
 
   if(g_currentTab === 'perf') drawPerfCharts();
+}
+
+function savePerfCsv(){
+  if(!g_perfSnapshots.length){
+    alert('暂无采样数据, 请先等待数据刷新');
+    return;
+  }
+  var hdr = '时间,调度,周期us,ctrl_e2e_avg_us,ctrl_e2e_max_us,fb_e2e_avg_us,fb_e2e_max_us,jitter_avg_us,jitter_max_us,overrun';
+  var rows = [hdr];
+  for(var i = 0; i < g_perfSnapshots.length; i++){
+    var s = g_perfSnapshots[i];
+    var mode = s.rt_mode ? 'SCHED_FIFO' : 'SCHED_OTHER';
+    rows.push([s.t, mode, s.period_us, s.ctrl_e2e_avg, s.ctrl_e2e_max,
+               s.fb_e2e_avg, s.fb_e2e_max, s.jitter_avg, s.jitter_max, s.overrun].join(','));
+  }
+  var csv = rows.join('\n');
+  var bom = String.fromCharCode(0xFEFF);
+  var blob = new Blob([bom + csv], {type:'text/csv;charset=utf-8'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'stark_perf_' + Date.now() + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
 }
 
 function setPV(id, val){
@@ -1427,22 +1608,23 @@ function setPV(id, val){
 }
 
 function drawPerfCharts(){
-  var fbAvg = 0, ctrlAvg = 0;
-  if(g_perfFbMax.length){
-    var s = 0;
-    for(var i = 0; i < g_perfFbMax.length; i++) s += g_perfFbMax[i];
-    fbAvg = Math.round(s / g_perfFbMax.length);
-  }
-  if(g_perfCtrlMax.length){
-    var s = 0;
-    for(var i = 0; i < g_perfCtrlMax.length; i++) s += g_perfCtrlMax[i];
-    ctrlAvg = Math.round(s / g_perfCtrlMax.length);
-  }
-  drawPerfBarChart('perf_canvas_fb', g_perfFbMax, 'μs', '#0ea5e9', fbAvg);
-  drawPerfBarChart('perf_canvas_ctrl', g_perfCtrlMax, 'μs', '#8b5cf6', ctrlAvg);
+  drawPerfMultiChart('perf_canvas_e2e', [
+    {data: g_perfCtrlE2eMax, color: '#0ea5e9', name: 'ctrl_e2e_max'},
+    {data: g_perfFbE2eMax,   color: '#8b5cf6', name: 'fb_e2e_max'}
+  ]);
+  drawPerfMultiChart('perf_canvas_jitter', [
+    {data: g_perfJitterMax, color: '#f59e0b', name: 'jitter_max'}
+  ]);
 }
 
-function drawPerfBarChart(canvasId, data, unit, color, avgValue){
+function avgOf(arr){
+  if(!arr || !arr.length) return 0;
+  var s = 0;
+  for(var i = 0; i < arr.length; i++) s += arr[i];
+  return Math.round(s / arr.length);
+}
+
+function drawPerfMultiChart(canvasId, series){
   var canvas = document.getElementById(canvasId);
   if(!canvas) return;
   var dpr = window.devicePixelRatio || 1;
@@ -1455,23 +1637,28 @@ function drawPerfBarChart(canvasId, data, unit, color, avgValue){
   var ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, W, H);
 
-  if(!data.length){
+  var hasData = false, n = 0, vmax = 1;
+  for(var i = 0; i < series.length; i++){
+    if(series[i].data && series[i].data.length){
+      hasData = true;
+      if(series[i].data.length > n) n = series[i].data.length;
+      for(var j = 0; j < series[i].data.length; j++){
+        if(series[i].data[j] > vmax) vmax = series[i].data[j];
+      }
+    }
+  }
+  if(!hasData){
     ctx.fillStyle = '#94a3b8'; ctx.font = (12*dpr) + 'px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('-- 等待数据...', W/2, H/2);
     return;
   }
+  if(n < 1) n = 1;
+  if(vmax < 10) vmax = 10;
+  vmax = Math.ceil(vmax * 1.2);
 
   var M = {t: 10, r: 10, b: 24, l: 50};
   var pw = W - M.l - M.r, ph = H - M.t - M.b;
-  var barW = Math.max(2*dpr, pw / data.length * 0.8);
-  var gap = pw / data.length;
-
-  /* find max for scale */
-  var vmax = 1;
-  for(var i = 0; i < data.length; i++){ if(data[i] > vmax) vmax = data[i]; }
-  if(vmax < 10) vmax = 10;
-  vmax = Math.ceil(vmax * 1.2);
 
   /* grid */
   ctx.strokeStyle = '#eee'; ctx.lineWidth = 0.5 * dpr;
@@ -1487,33 +1674,34 @@ function drawPerfBarChart(canvasId, data, unit, color, avgValue){
     var y = M.t + ph / 4 * i;
     ctx.fillText(Math.round(v), M.l - 6*dpr, y + 3*dpr);
   }
-  ctx.fillText(unit, M.l - 6*dpr, M.t - 2*dpr);
+  ctx.fillText('μs', M.l - 6*dpr, M.t - 2*dpr);
 
-  /* bars */
-  for(var i = 0; i < data.length; i++){
-    var x = M.l + i * gap + (gap - barW) / 2;
-    var bh = Math.max(1, (data[i] / vmax) * ph);
-    var y = M.t + ph - bh;
-    ctx.fillStyle = color;
-    ctx.fillRect(x, y, barW, bh);
+  /* bars (每序列一组, 组内并排) */
+  var groupW = pw / n;
+  var barW = Math.max(2*dpr, groupW / series.length * 0.7);
+  for(var s = 0; s < series.length; s++){
+    var data = series[s].data || [];
+    for(var j = 0; j < data.length; j++){
+      var x = M.l + j*groupW + s*(groupW/series.length) + (groupW/series.length - barW)/2;
+      var bh = Math.max(1, (data[j] / vmax) * ph);
+      var y = M.t + ph - bh;
+      ctx.fillStyle = series[s].color;
+      ctx.fillRect(x, y, barW, bh);
+    }
   }
 
   /* baseline */
   ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.5 * dpr;
   ctx.beginPath(); ctx.moveTo(M.l, M.t + ph); ctx.lineTo(W - M.r, M.t + ph); ctx.stroke();
 
-  /* avg reference line (dashed) */
-  if(avgValue !== undefined && avgValue > 0){
-    var ay = M.t + ph - (avgValue / vmax) * ph;
-    if(ay > M.t && ay < M.t + ph){
-      ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1 * dpr;
-      ctx.setLineDash([4 * dpr, 4 * dpr]);
-      ctx.beginPath(); ctx.moveTo(M.l, ay); ctx.lineTo(W - M.r, ay); ctx.stroke();
-      ctx.setLineDash([]);
-      /* avg label */
-      ctx.fillStyle = '#f59e0b'; ctx.font = (9 * dpr) + 'px sans-serif'; ctx.textAlign = 'right';
-      ctx.fillText('avg=' + Math.round(avgValue), W - M.r - 4 * dpr, ay - 3 * dpr);
-    }
+  /* legend */
+  var lx = M.l;
+  ctx.textAlign = 'left';
+  for(var s = 0; s < series.length; s++){
+    var name = series[s].name + ' avg=' + avgOf(series[s].data);
+    ctx.fillStyle = series[s].color; ctx.font = (9*dpr) + 'px sans-serif';
+    ctx.fillText(name, lx, M.t - 2*dpr);
+    lx += ctx.measureText(name).width + 12*dpr;
   }
 }
 
@@ -1554,6 +1742,7 @@ function connectBattWS(){
         if(d.channel === 'battery_status'){ handleBattStatus(d.data); }
         else if(d.channel === 'battery_fault'){ handleBattFault(d.data); }
         else if(d.channel === 'battery_info'){ handleBattInfo(d.data); }
+        else if(d.channel === 'power_state'){ handlePowerState(d.data); }
       }
     }catch(err){}
   };
@@ -1581,14 +1770,11 @@ function clearBattDisplay(){
   setBVI('bv_ver', '--');
   setBVI('bv_id', '--');
   for(var i = 1; i <= 6; i++){ setBVI('bcv_' + i, '--'); }
-  var map = {charger_overvoltage:'bf_cov', charge_overcurrent:'bf_coc',
-    ntc_short:'bf_ns', ntc_open:'bf_no', cell_voltage_diff:'bf_cvd',
-    charge_timeout:'bf_cto', discharge_overcurrent:'bf_doc',
-    discharge_short:'bf_ds', secondary_overcharge:'bf_soc'};
-  for(var k in map){
-    var el = document.getElementById(map[k]);
-    if(el){ el.textContent = '--'; el.className = 'fval ok'; }
-  }
+  setBV('pv_cmos', '--');
+  setBV('pv_dmos', '--');
+  setBV('pv_mctrl', '--');
+  var grid = document.getElementById('batt_fault_grid');
+  if(grid) grid.innerHTML = '<div class="batt-fault-row"><span class="fval ok">-- 等待数据 --</span></div>';
 }
 
 function refreshBattData(){
@@ -1659,20 +1845,47 @@ function handleBattStatus(d){
 function handleBattFault(d){
   if(!d) return;
   g_lastBattFault = d;
-  var map = {
-    charger_overvoltage:'bf_cov', charge_overcurrent:'bf_coc',
-    ntc_short:'bf_ns', ntc_open:'bf_no', cell_voltage_diff:'bf_cvd',
-    charge_timeout:'bf_cto', discharge_overcurrent:'bf_doc',
-    discharge_short:'bf_ds', secondary_overcharge:'bf_soc'
-  };
-  for(var k in map){
-    var el = document.getElementById(map[k]);
-    if(el){
-      var v = d[k];
-      el.textContent = v ? '异常' : '正常';
-      el.className = 'fval ' + (v ? 'err' : 'ok');
-    }
+  var s1 = d.sys_fault1 || 0, s2 = d.sys_fault2 || 0;
+  var d1 = d.dischg_fault1 || 0, d2 = d.dischg_fault2 || 0;
+  var c1 = d.chg_fault1 || 0, c2 = d.chg_fault2 || 0;
+  var ps = d.pack_status || 0;
+
+  /* MOS 状态 → 充电状态区 */
+  setBV('pv_cmos', (ps & 0x01) ? '开启' : '关闭');
+  setBV('pv_dmos', (ps & 0x02) ? '开启' : '关闭');
+  setBV('pv_mctrl', (ps & 0x0C) ? '主控控制中' : '未控制');
+
+  /* 只收集触发的故障 */
+  var faults = [];
+  if(s1 & 0x01) faults.push('通信超时');
+  if((s1 & 0x02) || (s1 & 0x08) || (s1 & 0x10)) faults.push('电芯NTC故障');
+  if((s1 & 0x04) || (s1 & 0x20) || (s1 & 0x40)) faults.push('MOS NTC故障');
+  if(s2 & 0x07) faults.push('电芯/AFE/FUSE故障');
+  if((d1 & 0x01) || (d2 & 0x01)) faults.push('过放一级/二级');
+  if((d1 & 0x02) || (d2 & 0x02)) faults.push('放电过流');
+  if(d1 & 0x1C) faults.push('放电过温/低温');
+  if(d2 & 0x0C) faults.push('放电短路/MOS故障');
+  if((c1 & 0x01) || (c2 & 0x01)) faults.push('过充一级/二级');
+  if((c1 & 0x02) || (c2 & 0x02)) faults.push('充电过流');
+  if(c1 & 0x04) faults.push('充电过温');
+  if(c1 & 0x18) faults.push('充电器/MOS故障');
+  if(c1 & 0x20) faults.push('充电超时');
+
+  renderBattFault(faults);
+}
+
+function renderBattFault(faults){
+  var grid = document.getElementById('batt_fault_grid');
+  if(!grid) return;
+  if(faults.length === 0){
+    grid.innerHTML = '<div class="batt-fault-row"><span class="fval ok">✅ 正常</span></div>';
+    return;
   }
+  var html = '';
+  for(var i = 0; i < faults.length; i++){
+    html += '<div class="batt-fault-row"><span class="fval err">⚠ ' + faults[i] + '</span></div>';
+  }
+  grid.innerHTML = html;
 }
 
 function handleBattInfo(d){
@@ -1709,6 +1922,167 @@ function setBV(id, text){
 function setBVI(id, text){
   var el = document.getElementById(id);
   if(el) el.textContent = text;
+}
+
+// ── 充电状态 + 曲线 ──
+var POWER_STATE_NAMES = {0:'IDLE', 1:'DETECT', 2:'CHARGE', 3:'FULL', 4:'FAULT'};
+var POWER_PHASE_NAMES = {0:'待机', 1:'涓流', 2:'CC', 3:'CV', 4:'等待', 5:'充满', 6:'超时'};
+var POWER_COLORS = { volt:'#0ea5e9', curr:'#f97316' };
+
+var powerChartData = { volt:[], curr:[] };
+var powerBaseTime = null;
+var powerPaused = false;
+var POWER_WINDOW_S = 120;
+var POWER_DATA_S = 600;
+
+function handlePowerState(d){
+  if(!d) return;
+  setBV('pv_state', POWER_STATE_NAMES[d.charge_state] || ('#' + d.charge_state));
+  setBV('pv_phase', POWER_PHASE_NAMES[d.charger_phase] || ('#' + d.charger_phase));
+  setBV('pv_active', (d.charger_active ? '是' : '否'));
+  setBV('pv_full', (d.charger_full ? '是' : '否'));
+  setBV('pv_adapter', (d.adapter_online ? '插入' : '拔出'));
+  setBV('pv_fault', (d.fault ? (d.fault_reason || '故障') : '正常'));
+  feedPowerChart(d);
+}
+
+function feedPowerChart(d){
+  if(powerPaused) return;
+  var now = Date.now();
+  if(powerBaseTime === null) powerBaseTime = now;
+  var t = (now - powerBaseTime) / 1000.0;
+  if(d.batt_voltage_mv != null && isFinite(d.batt_voltage_mv)) powerChartData.volt.push({t:t, v:d.batt_voltage_mv});
+  if(d.batt_current_ma != null && isFinite(d.batt_current_ma)) powerChartData.curr.push({t:t, v:d.batt_current_ma});
+  var cutoff = t - POWER_DATA_S;
+  ['volt','curr'].forEach(function(k){
+    var a = powerChartData[k];
+    while(a.length && a[0].t < cutoff) a.shift();
+  });
+  drawPowerChart();
+}
+
+function togglePowerChart(){
+  powerPaused = !powerPaused;
+  var btn = document.getElementById('powerPauseBtn');
+  if(btn) btn.textContent = powerPaused ? '▶️ 继续' : '⏸️ 暂停';
+}
+
+function resetPowerChart(){
+  powerChartData.volt = [];
+  powerChartData.curr = [];
+  powerBaseTime = null;
+  powerPaused = false;
+  var btn = document.getElementById('powerPauseBtn');
+  if(btn) btn.textContent = '⏸️ 暂停';
+  drawPowerChart();
+}
+
+function savePowerCSV(){
+  if(powerChartData.volt.length === 0 && powerChartData.curr.length === 0){ alert('无曲线数据'); return; }
+  var lines = ['时间(s),电压(mV),电流(mA)'];
+  var n = Math.max(powerChartData.volt.length, powerChartData.curr.length);
+  for(var i = 0; i < n; i++){
+    var v = powerChartData.volt[i], c = powerChartData.curr[i];
+    var t = v ? v.t.toFixed(1) : (c ? c.t.toFixed(1) : '0');
+    lines.push(t + ',' + (v ? v.v : '') + ',' + (c ? c.v : ''));
+  }
+  var blob = new Blob(['\uFEFF' + lines.join('\n')], {type:'text/csv;charset=utf-8'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'power_curve_' + new Date().toISOString().replace(/[:.]/g,'-') + '.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function drawPowerChart(){
+  var canvas = document.getElementById('power_chart');
+  if(!canvas) return;
+  var dpr = window.devicePixelRatio || 1;
+  var parent = canvas.parentElement;
+  if(!parent) return;
+  var rect = parent.getBoundingClientRect();
+  if(rect.width < 10) return;
+  var W = rect.width * dpr, H = rect.height * dpr;
+  if(H < 50) H = 300 * dpr;
+  canvas.width = W; canvas.height = H;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+
+  var ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  var M = {t:20, r:50, b:28, l:55};
+  var pw = W - M.l - M.r, ph = H - M.t - M.b;
+  if(pw < 10 || ph < 10) return;
+
+  var nowV = powerChartData.volt.length ? powerChartData.volt[powerChartData.volt.length-1].t : 0;
+  var nowC = powerChartData.curr.length ? powerChartData.curr[powerChartData.curr.length-1].t : 0;
+  var now = Math.max(nowV, nowC);
+  var tMax = now, tMin = Math.max(0, now - POWER_WINDOW_S);
+
+  function seriesRange(arr){
+    var mn = Infinity, mx = -Infinity;
+    for(var i = 0; i < arr.length; i++){
+      var p = arr[i];
+      if(p.t < tMin) continue;
+      if(p.v < mn) mn = p.v;
+      if(p.v > mx) mx = p.v;
+    }
+    if(mn === Infinity){ mn = 0; mx = 1; }
+    var pad = (mx - mn) * 0.1 || 10;
+    return {min: mn - pad, max: mx + pad};
+  }
+
+  var vR = seriesRange(powerChartData.volt);
+  var cR = seriesRange(powerChartData.curr);
+
+  var toX = function(t){ return M.l + (t - tMin) / (tMax - tMin || 1) * pw; };
+  var toVY = function(v){ return M.t + ph - (v - vR.min) / (vR.max - vR.min || 1) * ph; };
+  var toCY = function(c){ return M.t + ph - (c - cR.min) / (cR.max - cR.min || 1) * ph; };
+
+  ctx.strokeStyle = '#eee'; ctx.lineWidth = 0.5 * dpr;
+  for(var i = 0; i <= 4; i++){
+    var y = M.t + ph / 4 * i;
+    ctx.beginPath(); ctx.moveTo(M.l, y); ctx.lineTo(W - M.r, y); ctx.stroke();
+  }
+
+  drawSeries(ctx, powerChartData.volt, POWER_COLORS.volt, toX, toVY, tMin, tMax, dpr);
+  drawSeries(ctx, powerChartData.curr, POWER_COLORS.curr, toX, toCY, tMin, tMax, dpr);
+
+  ctx.fillStyle = POWER_COLORS.volt; ctx.font = (10*dpr) + 'px sans-serif'; ctx.textAlign = 'right';
+  for(var i = 0; i <= 4; i++){
+    var v = vR.min + (vR.max - vR.min) * i / 4;
+    ctx.fillText(v.toFixed(0), M.l - 6*dpr, toVY(v) + 3*dpr);
+  }
+  ctx.fillStyle = POWER_COLORS.curr; ctx.textAlign = 'left';
+  for(var i = 0; i <= 4; i++){
+    var c = cR.min + (cR.max - cR.min) * i / 4;
+    ctx.fillText(c.toFixed(0), W - M.r + 6*dpr, toCY(c) + 3*dpr);
+  }
+
+  ctx.fillStyle = '#666'; ctx.textAlign = 'center';
+  for(var i = 0; i <= 5; i++){
+    ctx.fillText((tMin + (tMax - tMin) * i / 5).toFixed(0) + 's', M.l + pw / 5 * i, H - M.b + 14*dpr);
+  }
+
+  ctx.font = (11*dpr) + 'px sans-serif';
+  ctx.fillStyle = POWER_COLORS.volt; ctx.textAlign = 'left';
+  ctx.fillText('电压(mV)', M.l, M.t - 4*dpr);
+  ctx.fillStyle = POWER_COLORS.curr;
+  ctx.fillText('电流(mA)', M.l + ctx.measureText('电压(mV)').width + 14*dpr, M.t - 4*dpr);
+}
+
+function drawSeries(ctx, arr, color, toX, toY, tMin, tMax, dpr){
+  ctx.strokeStyle = color; ctx.lineWidth = 1.5 * dpr; ctx.beginPath();
+  var first = true;
+  for(var i = 0; i < arr.length; i++){
+    var p = arr[i];
+    if(p.t < tMin) continue;
+    if(p.t > tMax) break;
+    var x = toX(p.t), y = toY(p.v);
+    if(first){ ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
 }
 
 // ── init ──

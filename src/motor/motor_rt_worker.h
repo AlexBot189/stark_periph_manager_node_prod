@@ -41,10 +41,13 @@ struct SafetyConfig {
 struct RtConfig {
     int      priority         = 90;
     int      recv_priority    = 85;
+    int      recv_cpu         = -1;    /* 接收线程绑核 (-1=不绑, 默认不绑), 显式设置才绑核 */
     uint32_t period_us        = 1000;
     int      report_divider   = 5;     /* 5周期 ,  200Hz */
-    int      cpu_affinity[2]  = {3, -1}; /* 只绑 core 3, core 2 留给算法进程 */
+    int      cpu_affinity[2]  = {3, -1}; /* RT 线程只绑 core 3 */
     bool     enable_rt        = true;  /* true=SCHED_FIFO, false=SCHED_OTHER */
+    bool     sync_enable      = true;  /* true=启动 SYNC 线程(1kHz), false=关闭不启动 */
+    bool     perf_trace       = true;  /* true=开启实时性能统计/打印, false=关闭(零开销, 不打印) */
 };
 
 class StarkRtWorker {
@@ -115,6 +118,17 @@ public:
     uint64_t   m_periodic_last_cycle = 0;    /* 上次上报的 RT 周期号 */
     uint64_t m_cycle_count;
     uint64_t m_overrun_count;
+
+    /* RT 周期抖动统计 (μs): 实际唤醒时刻 - 理想目标时刻 */
+    uint32_t m_jitter_min_us;
+    uint32_t m_jitter_max_us;
+    uint64_t m_jitter_acc_us;
+    uint32_t m_jitter_cnt;
+
+    /* 本轮累计 max (只增不减, 由 perf_reset_request 清零) */
+    uint32_t m_fb_age_max_run = 0;    /* CAN收帧→RT读 的本轮最大年龄 */
+    uint32_t m_mbox_age_max_run = 0;  /* 算法写mailbox→RT读 的本轮最大年龄 */
+    uint32_t m_ctrl_max_run = 0;      /* 指令下发(T5→T6) 的本轮最大耗时 */
 
     /* 电机数量 (从 config.json 读取, ≤ STARK_MAX_MOTORS) */
     int      m_motor_count;

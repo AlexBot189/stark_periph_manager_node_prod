@@ -361,16 +361,39 @@ static std::string serialize_to_json(stark_shm_t *shm, const WebServer::CmdTrack
         "\"cmd_tq2_valid\":%d,"
         "\"btn_state\":%u,"
         "\"btn_seq\":%u,"
-        "\"fb_max\":%u,"
-        "\"overrun\":%u,"
-        "\"fb_min\":%u,"
-        "\"fb_avg\":%u,"
-        "\"ctrl_max\":%u,"
-        "\"ctrl_avg\":%u,"
-        "\"ctrl_min\":%u,"
+        /* RT 状态 */
+        "\"rt_priority\":%u,"
+        "\"rt_cpu\":%u,"
+        "\"perf_trace\":%u,"
+        /* 下行 Ctrl */
+        "\"ctrl_total_avg\":%u,"
+        "\"ctrl_total_max\":%u,"
+        "\"ctrl_total_min\":%u,"
         "\"mbox_age_max\":%u,"
         "\"mbox_age_avg\":%u,"
         "\"mbox_age_min\":%u,"
+        "\"ctrl_e2e_avg\":%u,"
+        "\"ctrl_e2e_min\":%u,"
+        "\"ctrl_e2e_max\":%u,"
+        /* 上行 Fb */
+        "\"fb_age_max\":%u,"
+        "\"fb_age_avg\":%u,"
+        "\"fb_age_min\":%u,"
+        "\"fb_read_avg\":%u,"
+        "\"fb_read_max\":%u,"
+        "\"fb_total_avg\":%u,"
+        "\"fb_total_max\":%u,"
+        "\"fb_total_min\":%u,"
+        "\"shm_write_avg\":%u,"
+        "\"fb_e2e_avg\":%u,"
+        "\"fb_e2e_min\":%u,"
+        "\"fb_e2e_max\":%u,"
+        /* RT 抖动 */
+        "\"jitter_avg\":%u,"
+        "\"jitter_min\":%u,"
+        "\"jitter_max\":%u,"
+        "\"overrun\":%u,"
+        "\"trace_cycles\":%u,"
         "\"period_us\":%u,"
         "\"shm_age\":%u,"
         "\"foot_l1\":%u,"
@@ -435,16 +458,39 @@ static std::string serialize_to_json(stark_shm_t *shm, const WebServer::CmdTrack
         (int)track.tq_valid_m1, (int)track.tq_valid_m2,
         (unsigned)__atomic_load_n(&shm->btn_report_state, __ATOMIC_ACQUIRE),
         (unsigned)__atomic_load_n(&shm->btn_report_seq, __ATOMIC_ACQUIRE),
-        shm->fb_age_max_us,
-        shm->cycle_overrun_count,
-        shm->fb_age_min_us,
-        shm->fb_age_avg_us,
-        shm->ctrl_total_max_us,
+        /* RT 状态 */
+        shm->rt_priority,
+        shm->rt_cpu,
+        shm->perf_trace_enabled,
+        /* 下行 Ctrl */
         shm->ctrl_total_avg_us,
+        shm->ctrl_total_max_us,
         shm->ctrl_total_min_us,
         shm->mbox_age_max_us,
         shm->mbox_age_avg_us,
         shm->mbox_age_min_us,
+        shm->ctrl_e2e_avg_us,
+        shm->ctrl_e2e_min_us,
+        shm->ctrl_e2e_max_us,
+        /* 上行 Fb */
+        shm->fb_age_max_us,
+        shm->fb_age_avg_us,
+        shm->fb_age_min_us,
+        shm->fb_read_avg_us,
+        shm->fb_read_max_us,
+        shm->fb_total_avg_us,
+        shm->fb_total_max_us,
+        shm->fb_total_min_us,
+        shm->shm_write_avg_us,
+        shm->fb_e2e_avg_us,
+        shm->fb_e2e_min_us,
+        shm->fb_e2e_max_us,
+        /* RT 抖动 */
+        shm->cycle_jitter_avg_us,
+        shm->cycle_jitter_min_us,
+        shm->cycle_jitter_max_us,
+        shm->cycle_overrun_count,
+        shm->trace_cycle_count,
         shm->period_us,
         shm_age,
         d->foot_pressure.left.adc[0],
@@ -1105,6 +1151,9 @@ void WebServer::PullLoop()
                         } else if (msg.find("\"report_stop\"") != std::string::npos) {
                             m_push_enabled.store(false);
                             ECO_INFO_NEW("[WebServer] report paused");
+                        } else if (msg.find("\"perf_reset\"") != std::string::npos) {
+                            if (m_shm) __atomic_store_n(&m_shm->perf_reset_request, 1, __ATOMIC_RELEASE);
+                            ECO_INFO_NEW("[WebServer] perf max reset requested");
                         } else {
                             dispatch_command(m_shm, m_motor_hal, msg, m_last_cmd);
                         }
@@ -1171,7 +1220,7 @@ void WebServer::PullLoop()
                 }
                 last_diag_us = now_us;
                 if (local_count % 500 == 0) { /* every ~10s */
-                    ECO_INFO_NEW("[WebServer] push {} frames, {} clients",
+                    ECO_DEBUG_NEW("[WebServer] push {} frames, {} clients",
                            m_frame_count, m_clients.size());
                 }
             }

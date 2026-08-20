@@ -76,6 +76,9 @@ bool CanDispatcher::InitDispatcher()
     /* 4. 设置接收线程实时参数 */
     motor_hal_recv_set_rt(m_hal, m_rt_cfg.enable_rt, m_rt_cfg.recv_priority);
 
+    /* 4.5 接收线程绑核 (与 RT 线程物理隔离, 避免同核 CPU/锁竞争) */
+    motor_hal_recv_set_affinity(m_hal, m_rt_cfg.recv_cpu);
+
     /* 5. 启动接收线程 */
     ret = motor_hal_recv_start(m_hal);
     if (ret < 0) {
@@ -341,9 +344,12 @@ bool CanDispatcher::LoadMotorConfig()
             auto& r = cfg["rt"];
             m_rt_cfg.priority      = r.value("control_priority",  90);
             m_rt_cfg.recv_priority  = r.value("recv_priority",     85);
+            m_rt_cfg.recv_cpu       = r.value("recv_cpu",          -1);
             m_rt_cfg.period_us     = r.value("control_period_us", 1000u);
             m_rt_cfg.report_divider = r.value("report_divider",    5);
             m_rt_cfg.enable_rt     = r.value("enable_rt", true);
+            m_rt_cfg.sync_enable   = r.value("sync_enable", true);
+            m_rt_cfg.perf_trace    = r.value("perf_trace", true);
             if (r.contains("cpu_affinity") && r["cpu_affinity"].is_array()
                 && r["cpu_affinity"].size() > 0) {
                 m_rt_cfg.cpu_affinity[0] = r["cpu_affinity"][0].get<int>();

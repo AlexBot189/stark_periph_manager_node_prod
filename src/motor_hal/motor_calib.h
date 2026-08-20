@@ -25,6 +25,7 @@ typedef enum {
     MOTOR_CALIB_CHECKING = 2,  /* 正在检测位置 */
     MOTOR_CALIB_DONE     = 3,  /* 校准成功 */
     MOTOR_CALIB_TIMEOUT  = -1, /* 超时失败 */
+    MOTOR_CALIB_FAILED   = -2, /* 新增: 模式设置失败 */
 } motor_calib_state_t;
 
 /* ================================================================

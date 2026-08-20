@@ -347,12 +347,16 @@ typedef struct {
     /* 统计 */
     uint32_t  trace_cycle_count;     /* 已采样周期数 */
     uint32_t  shm_write_avg_us;      /* SHM 写入耗时 */
-    uint16_t  cycle_overrun_count;   /* 周期超限次数 */
+    uint32_t  cycle_overrun_count;   /* 周期超限次数 (uint32_t: 长期压测不回绕) */
 
     /* 周期上报区 (motor_node 写, 算法/Web 读) */
     uint8_t   periodic_enabled;       /* 上报总开关: 0=关 1=开 */
     uint8_t   rt_mode;               /* 0=SCHED_OTHER 1=SCHED_FIFO */
     uint16_t  period_us;             /* RT 周期 (us) */
+    uint8_t   rt_priority;           /* RT线程优先级 (SCHED_FIFO prio) */
+    uint8_t   rt_cpu;                /* RT线程主绑核 */
+    uint8_t   perf_trace_enabled;    /* 实时性能统计开关 0=关 1=开 */
+    uint8_t   perf_reset_request;    /* web/算法写1: 清零本轮max, RT消费后清零 */
     uint32_t  periodic_period_ms;     /* 上报周期 ms, 默认 5 */
     uint32_t  periodic_version;       /* 写入版本号, 递增 */
     PeriodicUploadData periodic_data;  /* 周期上报数据 */
@@ -382,16 +386,28 @@ typedef struct {
     volatile uint8_t  btn_report_state;            /* 0=松开 1=按下 */
     volatile uint32_t btn_report_seq;              /* 每次按下递增, 算法比对检测边沿 */
 
-    uint8_t   _pad[3045];
+    /* 端到端耗时 (μs) */
+    uint16_t  ctrl_e2e_avg_us;       /* 算法下发 → PDO 发出 */
+    uint16_t  ctrl_e2e_min_us;
+    uint32_t  ctrl_e2e_max_us;       /* 非RT下可能超65535, 用32位 */
+    uint16_t  fb_e2e_avg_us;         /* CAN收帧 → SHM写完 */
+    uint16_t  fb_e2e_min_us;
+    uint32_t  fb_e2e_max_us;         /* 非RT下可能超65535, 用32位 */
+    /* RT 周期抖动 (μs) */
+    uint16_t  cycle_jitter_avg_us;   /* 实际唤醒 - 理想目标 */
+    uint16_t  cycle_jitter_min_us;
+    uint32_t  cycle_jitter_max_us;   /* 非RT下可能超65535, 用32位 */
+
+    uint8_t   _pad[3015];
 } stark_shm_t;
 
 /* 编译期校验 struct 大小, 字段变更时更新此值 */
 /* 编译期校验, ARM64/x86_64 对齐差异需分别适配, 暂时注释 */
 #if 0
 #ifdef __cplusplus
-static_assert(sizeof(stark_shm_t) == 4652, "stark_shm_t size changed, update _pad and this assert");
+static_assert(sizeof(stark_shm_t) == 4648, "stark_shm_t size changed, update _pad and this assert");
 #else
-_Static_assert(sizeof(stark_shm_t) == 4652, "stark_shm_t size changed, update _pad and this assert");
+_Static_assert(sizeof(stark_shm_t) == 4648, "stark_shm_t size changed, update _pad and this assert");
 #endif
 #endif
 
