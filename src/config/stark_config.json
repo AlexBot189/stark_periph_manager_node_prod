@@ -34,7 +34,9 @@
   },
   "rt": {
     "enable_rt": true,
-    "sync_enable": false,
+    "sync_enable": true,
+    "sync_priority": 98,
+    "sync_cpu": 1,
     "control_priority": 90,
     "recv_priority": 85,
     "recv_cpu": -1,

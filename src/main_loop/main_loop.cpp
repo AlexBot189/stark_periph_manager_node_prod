@@ -236,6 +236,9 @@ static void poll_booting(stark_shm_t* shm, int motor_count,
         if (hal) {
             bool sync_ok = true;
             if (enable_sync) {
+                const RtConfig& rc = g_dispatcher->GetRtConfig();
+                motor_hal_sync_set_rt(hal, true, rc.sync_priority);
+                motor_hal_sync_set_affinity(hal, rc.sync_cpu);
                 int ret = motor_hal_sync_start(hal, 1000);  /* 1ms = 1KHz */
                 if (ret != 0) {
                     sync_ok = false;

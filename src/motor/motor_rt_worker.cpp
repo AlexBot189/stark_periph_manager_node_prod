@@ -189,7 +189,7 @@ void StarkRtWorker::Run()
                 if (j > m_jitter_max_us) m_jitter_max_us = j;
                 m_jitter_acc_us += j;
                 m_jitter_cnt++;
-                m_overrun_count++;   /* 错过理想唤醒截止期 = 一次周期超限 */
+                if (j > 100) m_overrun_count++;   /* 抖动 >100us 才算周期超限 */
             }
         }
 

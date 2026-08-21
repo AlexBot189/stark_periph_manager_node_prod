@@ -349,6 +349,8 @@ bool CanDispatcher::LoadMotorConfig()
             m_rt_cfg.report_divider = r.value("report_divider",    5);
             m_rt_cfg.enable_rt     = r.value("enable_rt", true);
             m_rt_cfg.sync_enable   = r.value("sync_enable", true);
+            m_rt_cfg.sync_priority = r.value("sync_priority", 98);
+            m_rt_cfg.sync_cpu      = r.value("sync_cpu", 1);
             m_rt_cfg.perf_trace    = r.value("perf_trace", true);
             if (r.contains("cpu_affinity") && r["cpu_affinity"].is_array()
                 && r["cpu_affinity"].size() > 0) {

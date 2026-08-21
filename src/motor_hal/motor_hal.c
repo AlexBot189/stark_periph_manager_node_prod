@@ -191,6 +191,9 @@ struct motor_hal {
     /* SYNC 定时器线程 */
     pthread_t    sync_thread;
     bool         sync_running;
+    bool         sync_rt_enable;
+    int          sync_rt_priority;
+    int          sync_cpu;          /* SYNC 线程绑核 (-1=不绑) */
     uint32_t     sync_period_us;
 
     pthread_mutex_t lock;
@@ -248,6 +251,7 @@ motor_hal_t* motor_hal_create(void)
     motor_hal_t *hal = calloc(1, sizeof(motor_hal_t));
     if (!hal) return NULL;
     hal->recv_cpu = -1;
+    hal->sync_cpu = -1;
 
     pthread_mutexattr_t ma;
     pthread_mutexattr_init(&ma);
@@ -1800,6 +1804,19 @@ static void* _sync_thread_fn(void *arg)
     motor_hal_t *hal = (motor_hal_t*)arg;
     uint32_t period_us = hal->sync_period_us;
 
+    if (hal->sync_rt_enable) {
+        struct sched_param sp;
+        sp.sched_priority = hal->sync_rt_priority;
+        pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
+    }
+
+    if (hal->sync_cpu >= 0) {
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(hal->sync_cpu, &cpuset);
+        pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+    }
+
     struct timespec next;
     clock_gettime(CLOCK_MONOTONIC, &next);
 
@@ -1846,6 +1863,19 @@ int motor_hal_sync_stop(motor_hal_t *hal)
 
     fprintf(stderr, "[SYNC] stopped\n");
     return 0;
+}
+
+void motor_hal_sync_set_rt(motor_hal_t *hal, bool enable, int priority)
+{
+    if (!hal) return;
+    hal->sync_rt_enable   = enable;
+    hal->sync_rt_priority = priority;
+}
+
+void motor_hal_sync_set_affinity(motor_hal_t *hal, int cpu)
+{
+    if (!hal) return;
+    hal->sync_cpu = cpu;
 }
 
 bool motor_hal_sync_is_running(motor_hal_t *hal)

@@ -808,6 +808,12 @@ int motor_hal_sync_start(motor_hal_t *hal, uint32_t period_us);
 /** @brief 停止 SYNC 定时器 */
 int motor_hal_sync_stop(motor_hal_t *hal);
 
+/** @brief 设置 SYNC 线程实时参数: SCHED_FIFO + 优先级 (启动前调用) */
+void motor_hal_sync_set_rt(motor_hal_t *hal, bool enable, int priority);
+
+/** @brief 设置 SYNC 线程绑核 (-1=不绑) */
+void motor_hal_sync_set_affinity(motor_hal_t *hal, int cpu);
+
 /** @brief 查询 SYNC 定时器是否在运行 */
 bool motor_hal_sync_is_running(motor_hal_t *hal);
 

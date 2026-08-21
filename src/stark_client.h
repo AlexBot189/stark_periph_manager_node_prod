@@ -44,16 +44,14 @@ extern "C" {
 #define STARK_MODE_MIT      6   /* MIT 阻抗控制, 走 0x110 独立帧 */
 #define STARK_MODE_TORQUE   7   /* 力矩环, 走 0x100/0x200 */
 
-/* 时间戳辅助 */
+/* 时间戳辅助 — 始终打点: timestamp_us 是 mailbox 数据字段,
+ * RT 侧依赖它计算 mbox_age/ctrl_e2e, 不能因统计开关而失效.
+ * clock_gettime(CLOCK_MONOTONIC) 是 vDSO 调用 (~20ns), 开销可忽略. */
 static inline uint64_t _stark_now_us(void)
 {
-#if STARK_LATENCY_TRACE
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
-#else
-    return 0;
-#endif
 }
 
 /* 客户端句柄 */

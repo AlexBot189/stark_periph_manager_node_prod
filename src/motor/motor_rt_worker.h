@@ -47,6 +47,8 @@ struct RtConfig {
     int      cpu_affinity[2]  = {3, -1}; /* RT 线程只绑 core 3 */
     bool     enable_rt        = true;  /* true=SCHED_FIFO, false=SCHED_OTHER */
     bool     sync_enable      = true;  /* true=启动 SYNC 线程(1kHz), false=关闭不启动 */
+    int      sync_priority    = 98;    /* SYNC 线程优先级 (SCHED_FIFO) */
+    int      sync_cpu         = 1;     /* SYNC 线程绑核 (-1=不绑) */
     bool     perf_trace       = true;  /* true=开启实时性能统计/打印, false=关闭(零开销, 不打印) */
 };
 
