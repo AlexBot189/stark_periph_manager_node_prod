@@ -69,7 +69,6 @@ bool CanDispatcher::InitDispatcher()
         return false;
     }
     m_hal = motor_dev->hal();
-    m_motor_device = motor_dev;
     ECO_INFO_NEW("[CanDispatcher] CANFD {}: arb={}bps data={}bps ({} motor(s))",
                  m_can_iface, m_can_arb_rate, m_can_data_rate, m_motor_count);
 

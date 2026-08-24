@@ -144,14 +144,6 @@ void StarkRtWorker::Run()
 
     const long period_ns = (long)m_rt.period_us * 1000L;
 
-    /* 创建安全控制器 (基于设备接口, 独立于算法) */
-    if (m_motor_device) {
-        stark::SafetyLimits limits;
-        limits.overtemp_celsius = m_safety.overtemp_celsius;
-        limits.encoder_stall_s  = m_safety.encoder_stall_s;
-        m_safety_ctrl = std::make_unique<stark::SafetyController>(m_motor_device, limits);
-    }
-
     while (m_running.load(std::memory_order_acquire)) {
 
         m_cur_jitter = 0;   /* 本周期抖动, 睡眠后测量 */
@@ -165,17 +157,6 @@ void StarkRtWorker::Run()
         ProcessMgmt();
         ProcessMailbox();
         PublishFeedback();
-
-        /* 安全检查 (过流/过温/编码器停滞 → 脱使能) */
-        if (m_safety_ctrl) {
-            stark::SafetyContext sctx;
-            sctx.cycle             = (uint32_t)m_cycle_count;
-            sctx.motor_count       = m_motor_count;
-            sctx.algo_heartbeat_ms = 0;  /* 心跳检查默认关 (0=不检查) */
-            if (!m_safety_ctrl->check(sctx)) {
-                if (m_shm) m_shm->node_state = STATE_FAULT;
-            }
-        }
 
         m_cycle_count++;
 
