@@ -27,7 +27,7 @@ typedef struct {
 
 #define STARK_SHM_NAME    "/stark_shm"
 #define STARK_SHM_SIZE    (64 * 1024)
-#define STARK_MAX_MOTORS  2               /* SHM 数组最大维度, 运行时 motor_count ≤ 此值 */
+#define STARK_MAX_MOTORS  16              /* SHM 数组最大维度(编译期上限), 运行时 motor_count ≤ 此值, 由配置决定 */
 
 #ifdef __cplusplus
 extern "C" {

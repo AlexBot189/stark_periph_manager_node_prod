@@ -380,16 +380,15 @@ void StarkRtWorker::ProcessMailbox()
 
     for (uint64_t n = 0; n < count; n++) {
         uint64_t idx = (r + n) % STARK_MBOX_DEPTH;
-        motor_command_t cmd0 = m_shm->mailbox.frames[idx].cmd[0];
-        motor_command_t cmd1 = m_shm->mailbox.frames[idx].cmd[1];
+        motor_command_t* cmds = m_shm->mailbox.frames[idx].cmd;  /* cmd[STARK_MAX_MOTORS] */
         /* 下行段1终点: RT 读到 mailbox 帧的时刻 (仅 tracing 开启时打点) */
         if (m_trace_shm && __atomic_load_n(&m_trace_shm->enabled, __ATOMIC_ACQUIRE))
             m_mailbox_read_us = _rt_now_us();
-        if (_stark_tx_dbg()) { _stark_dbg_tx(cmd0); _stark_dbg_tx(cmd1); }
+        if (_stark_tx_dbg()) { _stark_dbg_tx(cmds[0]); _stark_dbg_tx(cmds[1]); }
 
         /* Byte0 管理命令 (改 pdo_byte0) */
         for (int i = 0; i < m_motor_count; i++) {
-            motor_command_t c = (i == 0) ? cmd0 : cmd1;
+            motor_command_t c = cmds[i];
             uint8_t mid = c.motor_id;
             if (mid < 1) continue;
 
@@ -423,33 +422,40 @@ void StarkRtWorker::ProcessMailbox()
             }
         }
 
-        /* MIT 多轴: 双电机用 0x210 一帧同时控制 */
-        if (cmd0.cmd == STARK_CMD_MIT_MULTI && cmd1.cmd == STARK_CMD_MIT_MULTI) {
+        /* 是否存在 MULTI 广播命令 */
+        bool any_multi = false;
+        for (int i = 0; i < m_motor_count; i++) {
+            if (cmds[i].cmd == STARK_CMD_MULTI) { any_multi = true; break; }
+        }
+
+        /* MIT 多轴: 双电机用 0x210 一帧同时控制 (仅 2 电机时) */
+        if (m_motor_count == 2 &&
+            cmds[0].cmd == STARK_CMD_MIT_MULTI && cmds[1].cmd == STARK_CMD_MIT_MULTI) {
             motor_hal_mit_multi_ctrl_phys(m_hal,
-                cmd0.motor_id,
-                (float)cmd0.mit_pos * (360.0f / 65535.0f) - 180.0f,
-                (float)((int16_t)(cmd0.mit_vel << 4)) / 16.0f,
-                (float)cmd0.mit_kp / 100.0f,
-                (float)cmd0.mit_kd / 100.0f,
-                (float)((int16_t)(cmd0.mit_torque << 4)) / 16.0f,
-                cmd1.motor_id,
-                (float)cmd1.mit_pos * (360.0f / 65535.0f) - 180.0f,
-                (float)((int16_t)(cmd1.mit_vel << 4)) / 16.0f,
-                (float)cmd1.mit_kp / 100.0f,
-                (float)cmd1.mit_kd / 100.0f,
-                (float)((int16_t)(cmd1.mit_torque << 4)) / 16.0f);
-            uint64_t origin = (cmd0.timestamp_us > 0 &&
-                               (cmd1.timestamp_us == 0 || cmd0.timestamp_us <= cmd1.timestamp_us))
-                                  ? cmd0.timestamp_us : cmd1.timestamp_us;
+                cmds[0].motor_id,
+                (float)cmds[0].mit_pos * (360.0f / 65535.0f) - 180.0f,
+                (float)((int16_t)(cmds[0].mit_vel << 4)) / 16.0f,
+                (float)cmds[0].mit_kp / 100.0f,
+                (float)cmds[0].mit_kd / 100.0f,
+                (float)((int16_t)(cmds[0].mit_torque << 4)) / 16.0f,
+                cmds[1].motor_id,
+                (float)cmds[1].mit_pos * (360.0f / 65535.0f) - 180.0f,
+                (float)((int16_t)(cmds[1].mit_vel << 4)) / 16.0f,
+                (float)cmds[1].mit_kp / 100.0f,
+                (float)cmds[1].mit_kd / 100.0f,
+                (float)((int16_t)(cmds[1].mit_torque << 4)) / 16.0f);
+            uint64_t origin = (cmds[0].timestamp_us > 0 &&
+                               (cmds[1].timestamp_us == 0 || cmds[0].timestamp_us <= cmds[1].timestamp_us))
+                                  ? cmds[0].timestamp_us : cmds[1].timestamp_us;
             PublishCtrlSample(TRACE_KIND_CTRL_MULTI, 0, origin);
         }
         /* 控制命令 (通过 pdo_byte0 发 PDO) */
-        else if (cmd0.cmd == STARK_CMD_MULTI || cmd1.cmd == STARK_CMD_MULTI) {
+        else if (any_multi) {
             multi_axis_cmd_t mcmds[STARK_MAX_MOTORS] = {};
             int mcount = 0;
 
-            for (int i = 0; i < 2; i++) {
-                motor_command_t c = (i == 0) ? cmd0 : cmd1;
+            for (int i = 0; i < m_motor_count; i++) {
+                motor_command_t c = cmds[i];
                 if (c.cmd != STARK_CMD_MULTI) continue;
                 if (c.motor_id < 1) continue;
 
@@ -471,15 +477,15 @@ void StarkRtWorker::ProcessMailbox()
             if (mcount > 0) {
                 motor_hal_multi_ctrl(m_hal, mcmds, (uint8_t)mcount);
                 uint64_t origin = 0;
-                for (int i = 0; i < 2; i++) {
-                    uint64_t t = (i == 0) ? cmd0.timestamp_us : cmd1.timestamp_us;
+                for (int i = 0; i < m_motor_count; i++) {
+                    uint64_t t = cmds[i].timestamp_us;
                     if (t > 0 && (origin == 0 || t < origin)) origin = t;
                 }
                 PublishCtrlSample(TRACE_KIND_CTRL_MULTI, 0, origin);
             }
         } else {
             for (int i = 0; i < m_motor_count; i++) {
-                motor_command_t c = (i == 0) ? cmd0 : cmd1;
+                motor_command_t c = cmds[i];
                 uint8_t mid = c.motor_id;
                 if (mid < 1 || mid > (uint8_t)m_motor_count) continue;
 
