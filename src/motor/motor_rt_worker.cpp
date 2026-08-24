@@ -382,8 +382,9 @@ void StarkRtWorker::ProcessMailbox()
         uint64_t idx = (r + n) % STARK_MBOX_DEPTH;
         motor_command_t cmd0 = m_shm->mailbox.frames[idx].cmd[0];
         motor_command_t cmd1 = m_shm->mailbox.frames[idx].cmd[1];
-        /* 下行段1终点: RT 读到 mailbox 帧的时刻 */
-        m_mailbox_read_us = _rt_now_us();
+        /* 下行段1终点: RT 读到 mailbox 帧的时刻 (仅 tracing 开启时打点) */
+        if (m_trace_shm && __atomic_load_n(&m_trace_shm->enabled, __ATOMIC_ACQUIRE))
+            m_mailbox_read_us = _rt_now_us();
         if (_stark_tx_dbg()) { _stark_dbg_tx(cmd0); _stark_dbg_tx(cmd1); }
 
         /* Byte0 管理命令 (改 pdo_byte0) */
