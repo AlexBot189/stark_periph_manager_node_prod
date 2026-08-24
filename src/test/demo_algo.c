@@ -933,19 +933,20 @@ int main(int argc, char** argv)
         }
         const char* sub = argv[2];
 
-        /* 解析电机 ID: argv[3]=id1, 若 argv[4] 为 1/2 则双电机 */
+        /* 解析电机 ID: argv[3]=id1, 若 argv[4] 为合法 ID 则双电机 */
+        int n_motor = (int)c.shm->motor_count;
         int id1 = atoi(argv[3]);
         int id2 = 0, dual = 0;
         int val_idx = 4;
         if (argc > 5) {
             int m = atoi(argv[4]);
-            if ((m == 1 || m == 2) && m != id1) {
+            if ((m >= 1 && m <= n_motor) && m != id1) {
                 id2 = m;
                 dual = 1;
                 val_idx = 5;
             }
         }
-        if (id1 < 1 || id1 > 2) { printf("ERR: invalid motor id=%d\n", id1); stark_close(&c); return 1; }
+        if (id1 < 1 || id1 > n_motor) { printf("ERR: invalid motor id=%d\n", id1); stark_close(&c); return 1; }
 
         if (strcmp(sub, "cur") == 0) {
             if (argc < val_idx + 1) { printf("ERR: need mA value\n"); stark_close(&c); return 1; }
@@ -1082,11 +1083,12 @@ int main(int argc, char** argv)
 
         if (strcmp(sub, "tq") == 0) {
             /* PDO 力矩环控制: pdo tq <id> <val> 或 pdo tq <id1> <id2> <val> */
+            int n_motor = (int)c.shm->motor_count;
             int id1 = atoi(argv[3]);
             int id2 = 0, dual = 0, val_idx = 4;
             if (argc > 5) {
                 int m = atoi(argv[4]);
-                if ((m == 1 || m == 2) && m != id1) { id2 = m; dual = 1; val_idx = 5; }
+                if ((m >= 1 && m <= n_motor) && m != id1) { id2 = m; dual = 1; val_idx = 5; }
             }
             if (argc < val_idx + 1) { printf("ERR: pdo tq <id> <val0.05N.m>\n"); stark_close(&c); return 1; }
             int val = atoi(argv[val_idx]);
@@ -1114,11 +1116,12 @@ int main(int argc, char** argv)
         if (strcmp(sub, "mit") == 0) {
             /* PDO MIT 单帧控制: pdo mit <id> <pos> <vel> <kp> <kd> <tq>
                双电机: pdo mit <id1> <id2> <pos> <vel> <kp> <kd> <tq> */
+            int n_motor = (int)c.shm->motor_count;
             int has_dual = 0, id1, id2;
             {
                 id1 = atoi(argv[3]);
                 int v = atoi(argv[4]);
-                if ((v == 1 || v == 2) && v != id1) {
+                if ((v >= 1 && v <= n_motor) && v != id1) {
                     has_dual = 1; id2 = v;
                 }
             }

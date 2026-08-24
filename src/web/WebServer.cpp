@@ -626,7 +626,7 @@ static void dispatch_command(stark_shm_t *shm, motor_hal_t *hal,
         m1_val = value;
     }
     /* support mixed {"motor":N,"value":V} */
-    if (motor_id > 0 && motor_id <= 2 && m1_val == 0 && value != 0) {
+    if (motor_id > 0 && motor_id <= (int)shm->motor_count && m1_val == 0 && value != 0) {
         m1_val = value;
     }
 
@@ -637,10 +637,13 @@ static void dispatch_command(stark_shm_t *shm, motor_hal_t *hal,
      * management commands
      * ================================================================ */
     if (cmd == "enable" || cmd == "disable" || cmd == "estop" || cmd == "clearf") {
-        int ids[2] = {0, 0};
+        int ids[STARK_MAX_MOTORS] = {0};
         int n = 0;
-        if (motor_id == 3) { ids[0] = 1; ids[1] = 2; n = 2; }  /* both */
-        else if (motor_id >= 1 && motor_id <= 2) { ids[0] = motor_id; n = 1; }
+        if (motor_id == (int)shm->motor_count + 1) {  /* both */
+            n = (int)shm->motor_count;
+            for (int i = 0; i < n; i++) ids[i] = i + 1;
+        }
+        else if (motor_id >= 1 && motor_id <= (int)shm->motor_count) { ids[0] = motor_id; n = 1; }
         else { ECO_INFO_NEW("[WebServer] mgmt: invalid motor={}", motor_id); return; }
 
         for (int i = 0; i < n; i++) {
@@ -763,16 +766,16 @@ static void dispatch_command(stark_shm_t *shm, motor_hal_t *hal,
      * Supports single motor (m1 only), dual same (m1=m2), dual diff (m1!=m2)
      * ================================================================ */
     if (cmd == "cur" || cmd == "pos" || cmd == "vel") {
-        int ids[2] = {0, 0};
-        int vals[2] = {0, 0};
+        int ids[STARK_MAX_MOTORS] = {0};
+        int vals[STARK_MAX_MOTORS] = {0};
         int n_motors = 0;
 
-        if (motor_id == 3) {
-            /* both motors */
-            ids[0] = 1; vals[0] = (m1_val != 0) ? m1_val : m2_val;
-            ids[1] = 2; vals[1] = (m2_val != 0) ? m2_val : vals[0];
-            n_motors = 2;
-        } else if (motor_id >= 1 && motor_id <= 2) {
+        if (motor_id == (int)shm->motor_count + 1) {
+            /* both motors: 所有电机同值 */
+            int common = (m1_val != 0) ? m1_val : value;
+            n_motors = (int)shm->motor_count;
+            for (int i = 0; i < n_motors; i++) { ids[i] = i + 1; vals[i] = common; }
+        } else if (motor_id >= 1 && motor_id <= (int)shm->motor_count) {
             ids[0] = motor_id;
             vals[0] = (m1_val != 0) ? m1_val : value;  /* m1_val or old-style value */
             n_motors = 1;

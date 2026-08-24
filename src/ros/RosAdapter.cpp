@@ -96,7 +96,7 @@ void RosAdapter::PubFeedback(const feedback_frame_t& fb)
         "{\"type\":\"feedback\",\"ts\":%lu,\"motor\":[",
         (unsigned long)fb.timestamp_us);
 
-    for (int i = 0; i < STARK_MAX_MOTORS; ++i) {
+    for (int i = 0; i < (int)m_shm->motor_count; ++i) {
         if (i > 0) off += snprintf(buf + off, sizeof(buf) - off, ",");
         uint8_t online = m_shm->motor_online;
         if (!(online & (1 << i))) {

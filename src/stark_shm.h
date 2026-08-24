@@ -314,6 +314,7 @@ typedef struct {
     /* 自描述头: 版本协商 (magic 不符 = 身份错; version 不符 = 布局错, 拒绝启动) */
     uint32_t          magic;
     uint32_t          version;
+    uint32_t          motor_count;          /* 运行时电机数 (≤ STARK_MAX_MOTORS) */
 
     /* 双 Buffer 反馈区 (motor_node 写, 算法/ROS/Web 读) */
     uint32_t          active_idx;            /* 0 或 1, atomic release/acquire          */
