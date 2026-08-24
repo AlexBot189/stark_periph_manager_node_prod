@@ -82,6 +82,9 @@ public:
     virtual bool readFeedback(int index, MotorFeedback& fb) = 0;
     /* RT: 写命令 */
     virtual bool writeCommand(int index, const MotorCommand& cmd) = 0;
+    /* RT: MIT 阻抗控制 (外骨骼核心模式) */
+    virtual bool writeMitCommand(int index, float position, float velocity,
+                                 float kp, float kd, float torque) = 0;
 
     /* 非RT: 使能/失能/清故障 */
     virtual bool enable(int index) = 0;
