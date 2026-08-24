@@ -37,6 +37,17 @@ struct MotorCommand {
 #define MOTOR_FLAG_RELEASE_BRAKE (1u << 1)  /* 释放抱闸 */
 #define MOTOR_FLAG_CLEAR_ERROR   (1u << 2)  /* 清故障 */
 
+/* 控制模式 (CiA402, 厂商无关) */
+enum MotorMode : uint8_t {
+    MOTOR_MODE_PROFILE_POS = 1,  /* 轮廓位置 */
+    MOTOR_MODE_PROFILE_VEL = 2,  /* 轮廓速度 */
+    MOTOR_MODE_CSP         = 3,  /* 循环同步位置 */
+    MOTOR_MODE_CSV         = 4,  /* 循环同步速度 */
+    MOTOR_MODE_CURRENT     = 5,  /* 电流环 */
+    MOTOR_MODE_MIT         = 6,  /* MIT 阻抗 */
+    MOTOR_MODE_TORQUE      = 7,  /* 力矩环 */
+};
+
 /* 传感器类型 (与 SHM 槽位一一对应) */
 enum SensorType : uint8_t {
     SENSOR_IMU           = 1,

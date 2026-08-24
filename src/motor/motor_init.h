@@ -35,6 +35,8 @@ extern "C" {
 #include "foot_pressure/FootPressureSensor.h"
 #include "motor/motor_rt_worker.h"
 
+namespace stark { class IMotorDevice; }
+
 namespace stark_periph_manager_node {
 
 class CanDispatcher : public IMsgInternalDispatcher {
@@ -55,6 +57,7 @@ public:
     stark_shm_t*     GetShm()       { return m_shm; }
     StarkMotorCtrl*  GetCtrl()      { return m_ctrl.get(); }
     IImuSource*   GetImuSensor() { return m_imu_sensor.get(); }
+    stark::IMotorDevice* GetMotorDevice() { return m_motor_device; }
     FootPressureSensor* GetFootPressureSensor() { return m_foot_sensor.get(); }
 
     /* 配置 (从 config.json 读取, 或默认值) */
@@ -115,6 +118,9 @@ private:
     /* IMU */
     std::unique_ptr<IImuSource> m_imu_sensor;
     ImuConfig    m_imu_cfg;
+
+    /* 电机设备 (由 DeviceManager 创建) */
+    stark::IMotorDevice* m_motor_device = nullptr;
 
     /* 足底压力传感器 */
     std::unique_ptr<FootPressureSensor> m_foot_sensor;

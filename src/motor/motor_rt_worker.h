@@ -17,11 +17,15 @@
 #include <atomic>
 #include <thread>
 #include <cstdint>
+#include <memory>
 
 extern "C" {
 #include "motor_hal.h"
 #include "stark_shm.h"
 }
+
+#include "framework/device.h"
+#include "framework/safety_controller.h"
 
 namespace stark_periph_manager_node {
 
@@ -63,6 +67,7 @@ public:
     bool IsRunning() const { return m_running.load(std::memory_order_acquire); }
 
     void SetSafetyConfig(const SafetyConfig& cfg) { m_safety = cfg; }
+    void SetMotorDevice(stark::IMotorDevice* d) { m_motor_device = d; }
     void SetRtConfig(const RtConfig& cfg);
 
     /* 诊断 */
@@ -105,6 +110,10 @@ public:
     std::thread       m_thread;
 
     SafetyConfig m_safety;
+
+    /* 安全控制器 (基于设备接口, 独立于算法) */
+    stark::IMotorDevice* m_motor_device = nullptr;
+    std::unique_ptr<stark::SafetyController> m_safety_ctrl;
     RtConfig     m_rt;
 
     /* 周期控制 */
