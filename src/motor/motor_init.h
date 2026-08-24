@@ -22,6 +22,7 @@
 #include <memory>
 #include <string>
 #include <mutex>
+#include <nlohmann/json.hpp>
 
 extern "C" {
 #include "stark_shm.h"
@@ -122,8 +123,9 @@ private:
     int         m_foot_baud_rate = 460800;
     int         m_foot_timeout_ms = 10;
 
-    /* 电机数量 (从 config.json motors 数组长度读取) */
+    /* 电机数量 (从 config.json 读取, ≤ STARK_MAX_MOTORS) */
     int          m_motor_count    = 2;
+    nlohmann::json m_motors_json;   /* 电机配置数组 (传给 MotorCanfd) */
 
     /* 校准/透传配置 (来自 config.json) */
     int          m_calib_timeout_ms = 10000;

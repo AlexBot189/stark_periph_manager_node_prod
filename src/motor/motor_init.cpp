@@ -7,6 +7,8 @@
 #include "motor/motor_init.h"
 #include "imu/imu_sensor.h"
 #include "foot_pressure/FootPressureSensor.h"
+#include "framework/device_manager.h"
+#include "framework/motor_canfd.h"
 #include "nlohmann/json.hpp"
 
 #include <cstring>
@@ -40,30 +42,35 @@ bool CanDispatcher::InitDispatcher()
 {
     if (m_running) return false;
 
-    /* 1. 创建 HAL */
-    m_hal = motor_hal_create();
-    if (!m_hal) {
-        ECO_ERROR_NEW("[CanDispatcher] motor_hal_create() failed");
-        return false;
-    }
-
-    /* 2. 打开 CANFD */
-    int ret = motor_hal_init(m_hal, m_can_iface.c_str(),
-                              m_can_arb_rate, m_can_data_rate);
-    if (ret < 0) {
-        ECO_ERROR_NEW("[CanDispatcher] motor_hal_init({}) failed: {}", m_can_iface, ret);
-        motor_hal_destroy(m_hal); m_hal = nullptr;
-        return false;
-    }
-    ECO_INFO_NEW("[CanDispatcher] CANFD {}: arb={}bps data={}bps",
-                 m_can_iface, m_can_arb_rate, m_can_data_rate);
-
-    /* 3. 注册电机 (走配置或硬编码默认) */
+    /* 1. 读取配置 (can/motors/其他) */
     if (!LoadMotorConfig()) {
         ECO_ERROR_NEW("[CanDispatcher] LoadMotorConfig() failed");
-        motor_hal_destroy(m_hal); m_hal = nullptr;
         return false;
     }
+
+    /* 2. 创建设备 (DeviceManager + MotorCanfd, 电机数由配置决定) */
+    nlohmann::json devices = nlohmann::json::array();
+    {
+        nlohmann::json motor_entry;
+        motor_entry["name"]                = "motor";
+        motor_entry["driver"]              = "motor_canfd";
+        motor_entry["config"]["can_iface"] = m_can_iface;
+        motor_entry["config"]["arb_rate"]  = m_can_arb_rate;
+        motor_entry["config"]["data_rate"] = m_can_data_rate;
+        motor_entry["config"]["motors"]    = m_motors_json;
+        devices.push_back(motor_entry);
+    }
+    stark::DeviceManager::instance().loadDevices(devices);
+
+    auto* motor_dev = dynamic_cast<stark::MotorCanfd*>(
+        stark::DeviceManager::instance().motor("motor"));
+    if (!motor_dev) {
+        ECO_ERROR_NEW("[CanDispatcher] motor device not created (check can/motors config)");
+        return false;
+    }
+    m_hal = motor_dev->hal();
+    ECO_INFO_NEW("[CanDispatcher] CANFD {}: arb={}bps data={}bps ({} motor(s))",
+                 m_can_iface, m_can_arb_rate, m_can_data_rate, m_motor_count);
 
     /* 3.5 调试日志桥 (根据 config: log_onoff) */
     if (m_log_onoff) {
@@ -80,10 +87,10 @@ bool CanDispatcher::InitDispatcher()
     motor_hal_recv_set_affinity(m_hal, m_rt_cfg.recv_cpu);
 
     /* 5. 启动接收线程 */
-    ret = motor_hal_recv_start(m_hal);
+    int ret = motor_hal_recv_start(m_hal);
     if (ret < 0) {
         ECO_ERROR_NEW("[CanDispatcher] motor_hal_recv_start() failed: {}", ret);
-        motor_hal_destroy(m_hal); m_hal = nullptr;
+        stark::DeviceManager::instance().stopAll(); m_hal = nullptr;
         return false;
     }
 
@@ -115,8 +122,7 @@ bool CanDispatcher::InitDispatcher()
     m_shm_mgr = stark_shm_mgr_open(m_shm_name.c_str(), true, m_shm_size_bytes);
     if (!m_shm_mgr) {
         ECO_ERROR_NEW("[CanDispatcher] stark_shm_mgr_open() failed");
-        motor_hal_recv_stop(m_hal);
-        motor_hal_destroy(m_hal); m_hal = nullptr;
+        stark::DeviceManager::instance().stopAll(); m_hal = nullptr;
         return false;
     }
     m_shm = (stark_shm_t*)m_shm_mgr->ptr;
@@ -157,12 +163,9 @@ bool CanDispatcher::DestroyDispatcher()
         m_foot_sensor.reset();
     }
 
-    /* 停止 recv + 销毁 HAL */
-    if (m_hal) {
-        motor_hal_recv_stop(m_hal);
-        motor_hal_destroy(m_hal);
-        m_hal = nullptr;
-    }
+    /* 停止设备 (MotorCanfd::stop → recv_stop + destroy) */
+    stark::DeviceManager::instance().stopAll();
+    m_hal = nullptr;
     m_ctrl.reset();
 
     /* 关闭 SHM */
@@ -295,7 +298,7 @@ bool CanDispatcher::LoadMotorConfig()
             m_can_data_rate= cfg["can"].value("data_rate",        5000000);
         }
 
-        /* 解析 motors */
+        /* 解析 motors (配置存入 m_motors_json, 由 MotorCanfd 注册) */
         if (cfg.contains("motors") && cfg["motors"].is_array()) {
             m_motor_count = (int)cfg["motors"].size();
             if (m_motor_count > STARK_MAX_MOTORS) {
@@ -304,33 +307,10 @@ bool CanDispatcher::LoadMotorConfig()
                 m_motor_count = STARK_MAX_MOTORS;
             }
             ECO_INFO_NEW("[CanDispatcher] motor count from config: {}", m_motor_count);
+            m_motors_json = cfg["motors"];
             for (const auto& m : cfg["motors"]) {
-                motor_config_t mc = {};
-                mc.node_id           = m.value("id", 0);
-                mc.heartbeat_ms      = m.value("heartbeat_ms", 2000);
-                mc.profile_accel     = m.value("profile_accel", 5000u);
-                mc.profile_decel     = m.value("profile_decel", 5000u);
-                mc.profile_velocity  = m.value("profile_velocity", 20u);
-                mc.disable_watchdog  = m.value("disable_watchdog", true);
-                mc.auto_enable       = m.value("auto_enable", false);
-                if (mc.auto_enable) m_motor_auto_enable = true;
-                mc.bootup_timeout_ms = 5000;
-                mc.tpdo_sync_count   = m.value("tpdo_sync_count", (uint8_t)1);
-
-                if (mc.node_id == 0) continue;
-
-                std::string name = m.value("name", std::string{});
-                ECO_INFO_NEW("[CanDispatcher] motor id={} name='{}'",
-                             mc.node_id, name.empty() ? "(none)" : name);
-
-                int ret = motor_hal_add_motor(m_hal, &mc);
-                if (ret < 0) {
-                    ECO_ERROR_NEW("[CanDispatcher] motor id={} add failed: {}", mc.node_id, ret);
-                    return false;
-                }
+                if (m.value("auto_enable", false)) m_motor_auto_enable = true;
             }
-            ECO_INFO_NEW("[CanDispatcher] loaded {} motors from {}",
-                         cfg["motors"].size(), m_config_path);
         }
 
         /* 解析 safety */
@@ -475,23 +455,19 @@ bool CanDispatcher::LoadMotorConfig()
     m_sensor_mode = 3;
     m_sensor_force_module = 1;
 
-    motor_config_t def = {};
-    def.heartbeat_ms      = 0;
-    def.profile_accel     = 500;
-    def.profile_decel     = 500;
-    def.profile_velocity  = 20;
-    def.disable_watchdog  = true;
-    def.auto_enable       = false;   /* 对齐 motor_tool: 不自动使能, 零位校准后再由控制命令使能 */
-    def.bootup_timeout_ms = 5000;
-    def.tpdo_sync_count   = 1;
-
+    m_motors_json = nlohmann::json::array();
     for (uint8_t id = 1; id <= (uint8_t)m_motor_count; id++) {
-        def.node_id = id;
-        int ret = motor_hal_add_motor(m_hal, &def);
-        if (ret != 0 && ret != -EEXIST) {
-            ECO_ERROR_NEW("[CanDispatcher] motor id={} add failed: {}", id, ret);
-            return false;
-        }
+        nlohmann::json m;
+        m["id"] = id;
+        m["heartbeat_ms"]      = 0;
+        m["profile_accel"]     = 500;
+        m["profile_decel"]     = 500;
+        m["profile_velocity"]  = 20;
+        m["disable_watchdog"]  = true;
+        m["auto_enable"]       = false;
+        m["bootup_timeout_ms"] = 5000;
+        m["tpdo_sync_count"]   = 1;
+        m_motors_json.push_back(m);
     }
 
     ECO_INFO_NEW("[CanDispatcher] registered {} motors (defaults)", m_motor_count);
