@@ -27,6 +27,8 @@ typedef struct {
 
 #define STARK_SHM_NAME    "/stark_shm"
 #define STARK_SHM_SIZE    (64 * 1024)
+#define STARK_SHM_MAGIC   0x53544152U     /* "STAR" 魔数, 校验 SHM 身份 */
+#define STARK_SHM_VERSION 1               /* 布局版本, 布局变更时 +1 */
 #define STARK_MAX_MOTORS  16              /* SHM 数组最大维度(编译期上限), 运行时 motor_count ≤ 此值, 由配置决定 */
 
 #ifdef __cplusplus
@@ -309,6 +311,10 @@ typedef struct {
 /* 共享内存总结构 (64KB) */
 
 typedef struct {
+    /* 自描述头: 版本协商 (magic 不符 = 身份错; version 不符 = 布局错, 拒绝启动) */
+    uint32_t          magic;
+    uint32_t          version;
+
     /* 双 Buffer 反馈区 (motor_node 写, 算法/ROS/Web 读) */
     uint32_t          active_idx;            /* 0 或 1, atomic release/acquire          */
     feedback_frame_t  fb_buffer[2];          /* 双 Buffer 防撕裂                         */

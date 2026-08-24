@@ -97,6 +97,14 @@ static inline int stark_open(stark_client_t* c)
         c->fd = -1;
         return -1;
     }
+    /* 版本协商: magic/version 不符则拒绝 (防新旧进程混跑读错偏移) */
+    if (c->shm->magic != STARK_SHM_MAGIC || c->shm->version != STARK_SHM_VERSION) {
+        munmap(c->shm, STARK_SHM_SIZE);
+        close(c->fd);
+        c->shm = NULL;
+        c->fd  = -1;
+        return -2;
+    }
     return 0;
 }
 
