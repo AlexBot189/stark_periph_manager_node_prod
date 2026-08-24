@@ -1,0 +1,22 @@
+graph TB
+    A["上电 / 开机"] --> B["等 Bootup 帧<br/>0x701:00（可错过，不阻塞）"]
+    B --> C["NMT Start<br/>cansend can0 000#0101<br/>无应答帧"]
+    C --> D["SDO 写心跳 0x1017<br/>601#2B171000D0070000"]
+    D --> D1{"电机回 0x581 写确认?<br/>581#6017100000000000"}
+    D1 -- "超时/无应答" --> FAIL1["启动失败<br/>motor_startup_full return"]
+    D1 -- "回 0x60" --> E["SDO 写 0x2650 看门狗<br/>SDO 读 0x100A 固件<br/>SDO 写 0x6081/6083/6084<br/>（全部 best-effort）"]
+    E --> F["SDO 使能三步 0x6040<br/>06 到 07 到 0F<br/>各隔 20ms"]
+    F --> F1{"每步都回 0x60 确认?<br/>581#6040600000000000"}
+    F1 -- "任一步失败" --> FAIL2["启动失败"]
+    F1 -- "三步都确认" --> G["配置 TPDO 映射<br/>（best-effort）"]
+    G --> H["启动完成 进入主循环<br/>每 50ms 轮询"]
+    H --> I["SDO 读状态字 0x6041<br/>601#4001600000000000"]
+    I --> I1{"电机回 0x4B 读应答?<br/>581#4B4160 状态字 0000"}
+    I1 -- "无应答" --> OFFLINE["判 UNKNOWN 电机离线"]
+    I1 -- "回 0x4B" --> J{"状态字不小于 0x60?<br/>正常 0x27 = Operation enabled"}
+    J -- "0x00 = NOT_READY" --> OFFLINE
+    J -- "在线" --> K["motor_online 置位"]
+    K --> L{"所有电机都在线?"}
+    L -- "部分在线" --> T["等 5s 超时降级<br/>以当前在线数进入 READY"]
+    L -- "全部在线" --> M
+    T --> M["进入 READY<br/>开始接受 demo_algo 控制"]

@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/time.h>
+#include <time.h>
 #include <errno.h>
 
 /* =====================================================
@@ -155,11 +156,16 @@ int can_driver_recv(can_driver_t *drv, canfd_frame_t *frame, int timeout_ms)
     int n = read(drv->sock_fd, &cfd, sizeof(cfd));
     if (n < 0) { drv->rx_err++; return -errno; }
 
+    /* 打点: can0 设备端读 CANFD 帧完成时刻 (反馈 e2e 起点) */
+    struct timespec rxts;
+    clock_gettime(CLOCK_MONOTONIC, &rxts);
+
     frame->id    = cfd.can_id & CAN_SFF_MASK;
     frame->dlc   = cfd.len;
     frame->is_fd = (cfd.flags & CANFD_BRS) != 0;
     memset(frame->data, 0, CANFD_MAX_DLC);
     memcpy(frame->data, cfd.data, cfd.len);
+    frame->rx_timestamp_us = (uint64_t)rxts.tv_sec * 1000000ULL + (uint64_t)rxts.tv_nsec / 1000ULL;
 
     drv->rx_count++;
     return n;

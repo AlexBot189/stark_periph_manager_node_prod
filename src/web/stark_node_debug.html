@@ -459,17 +459,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <!-- latency tables -->
   <div class="perf-latency-row">
     <div class="perf-lat-table">
-      <div class="plt-header">下行 · 算法 → 电机 (Ctrl)</div>
-      <div class="plt-row"><span class="plt-k">命令入队</span><span class="plt-v" id="pm_mbox_min">--</span><span class="plt-v" id="pm_mbox_avg">--</span><span class="plt-v" id="pm_mbox_max">--</span><span class="plt-u">μs</span></div>
-      <div class="plt-row"><span class="plt-k">指令下发</span><span class="plt-v" id="pm_ctrl_min">--</span><span class="plt-v" id="pm_ctrl_avg">--</span><span class="plt-v" id="pm_ctrl_max">--</span><span class="plt-u">μs</span></div>
-      <div class="plt-row"><span class="plt-k">端到端</span><span class="plt-v" id="pm_ctrl_e2e_min">--</span><span class="plt-v" id="pm_ctrl_e2e_avg">--</span><span class="plt-v" id="pm_ctrl_e2e_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-header">下行 · demo_algo → can0</div>
+      <div class="plt-row"><span class="plt-k">段1 algo→rt读</span><span class="plt-v" id="pm_dn_seg1_min">--</span><span class="plt-v" id="pm_dn_seg1_avg">--</span><span class="plt-v" id="pm_dn_seg1_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">段2 rt读→can0</span><span class="plt-v" id="pm_dn_seg2_min">--</span><span class="plt-v" id="pm_dn_seg2_avg">--</span><span class="plt-v" id="pm_dn_seg2_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">总 algo→can0</span><span class="plt-v" id="pm_dn_total_min">--</span><span class="plt-v" id="pm_dn_total_avg">--</span><span class="plt-v" id="pm_dn_total_max">--</span><span class="plt-u">μs</span></div>
       <div class="plt-row" style="border-bottom:none;padding-top:2px;padding-bottom:2px;color:#94a3b8;font-size:0.68em"><span class="plt-k"></span><span style="flex:1;text-align:center">Min</span><span style="flex:1;text-align:center">Avg</span><span style="flex:1;text-align:center">Max</span><span class="plt-u"></span></div>
     </div>
     <div class="perf-lat-table">
-      <div class="plt-header">上行 · 电机 → 算法 (Fb)</div>
-      <div class="plt-row"><span class="plt-k">CAN收帧</span><span class="plt-v" id="pm_fb_age_min">--</span><span class="plt-v" id="pm_fb_age_avg">--</span><span class="plt-v" id="pm_fb_age_max">--</span><span class="plt-u">μs</span></div>
-      <div class="plt-row"><span class="plt-k">反馈处理</span><span class="plt-v" id="pm_fb_total_min">--</span><span class="plt-v" id="pm_fb_total_avg">--</span><span class="plt-v" id="pm_fb_total_max">--</span><span class="plt-u">μs</span></div>
-      <div class="plt-row"><span class="plt-k">端到端</span><span class="plt-v" id="pm_fb_e2e_min">--</span><span class="plt-v" id="pm_fb_e2e_avg">--</span><span class="plt-v" id="pm_fb_e2e_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-header">上行 · can0 → demo_algo</div>
+      <div class="plt-row"><span class="plt-k">段1 can0→rt读</span><span class="plt-v" id="pm_up_seg1_min">--</span><span class="plt-v" id="pm_up_seg1_avg">--</span><span class="plt-v" id="pm_up_seg1_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">段2 rt读→algo读</span><span class="plt-v" id="pm_up_seg2_min">--</span><span class="plt-v" id="pm_up_seg2_avg">--</span><span class="plt-v" id="pm_up_seg2_max">--</span><span class="plt-u">μs</span></div>
+      <div class="plt-row"><span class="plt-k">总 can0→algo读</span><span class="plt-v" id="pm_up_total_min">--</span><span class="plt-v" id="pm_up_total_avg">--</span><span class="plt-v" id="pm_up_total_max">--</span><span class="plt-u">μs</span></div>
       <div class="plt-row" style="border-bottom:none;padding-top:2px;padding-bottom:2px;color:#94a3b8;font-size:0.68em"><span class="plt-k"></span><span style="flex:1;text-align:center">Min</span><span style="flex:1;text-align:center">Avg</span><span style="flex:1;text-align:center">Max</span><span class="plt-u"></span></div>
     </div>
   </div>
@@ -489,12 +489,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
   <!-- charts -->
   <div class="perf-chart-box">
-    <h4>端到端延迟趋势 (最近 60 帧, Max 值)</h4>
+    <h4>逐帧延迟趋势 (1ms 粒度)</h4>
     <canvas id="perf_canvas_e2e"></canvas>
   </div>
 
   <div class="perf-chart-box">
-    <h4>RT 周期抖动趋势 (最近 60 帧, Max 值)</h4>
+    <h4>RT 周期抖动趋势 (1ms 粒度)</h4>
     <canvas id="perf_canvas_jitter"></canvas>
   </div>
 
@@ -659,6 +659,11 @@ var chartLastRender = 0;
 var chartMouseX = -1, chartMouseY = -1;
 var chartOffset = 0;
 var chartDragging = false, chartDragStart = 0, chartDragOffset0 = 0;
+
+/* perf 曲线缩放/拖放状态 (窗口=样本数) */
+var g_perfWin = 512;
+var g_perfOffset = 0;
+var g_perfDragging = false, g_perfDragStartX = 0, g_perfDragOffset0 = 0;
 
 var CHART_KEYS = ['pos1','pos2','cur1','cur2','vel1','vel2','spi_tq1','spi_tq2','imu_r','imu_p','imu_y','c_cur1','c_cur2','c_pos1','c_pos2','c_vel1','c_vel2','c_tq1','c_tq2','foot_l1','foot_l2','foot_l3','foot_r1','foot_r2','foot_r3'];
 
@@ -1200,6 +1205,24 @@ function handleData(d){
   
   updateFaultPanel(d);
   updatePerfPanel(d);
+
+  /* 逐帧监控增量样本 (来自独立 trace SHM 三 ring, 服务端只推新增帧) */
+  if(d.trace_ctrl && d.trace_ctrl.length){
+    for(var i = 0; i < d.trace_ctrl.length; i++){
+      var s = d.trace_ctrl[i];   /* [cycle, kind, e2e_us, motor_id] */
+      pushTrace('ctrl', s[2]);   /* 下行总 (single/multi 合并为一条曲线) */
+    }
+  }
+  if(d.trace_fb && d.trace_fb.length){
+    for(var i = 0; i < d.trace_fb.length; i++) pushTrace('fb', d.trace_fb[i][1]);
+  }
+  if(d.trace_jitter && d.trace_jitter.length){
+    for(var i = 0; i < d.trace_jitter.length; i++) pushTrace('jitter', d.trace_jitter[i][1]);
+  }
+  if((d.trace_ctrl && d.trace_ctrl.length) || (d.trace_fb && d.trace_fb.length) || (d.trace_jitter && d.trace_jitter.length)){
+    if(g_currentTab === 'perf') drawPerfCharts();
+  }
+
   if(g_records.length < 5000) g_records.push(d);
   
   var info = document.getElementById('footer_info');
@@ -1341,6 +1364,33 @@ function setupChartMouse(){
         }
       });
     }
+
+    /* perf 曲线缩放/拖放 (复用 main_chart 交互) */
+    ['perf_canvas_e2e', 'perf_canvas_jitter'].forEach(function(pid){
+      var pv = document.getElementById(pid);
+      if(!pv) return;
+      pv.addEventListener('wheel', function(e){
+        e.preventDefault();
+        if(e.deltaY > 0) g_perfWin = Math.min(2000, g_perfWin * 2);
+        else g_perfWin = Math.max(32, Math.round(g_perfWin / 2));
+        drawPerfCharts();
+      }, {passive: false});
+      pv.addEventListener('mousedown', function(e){
+        e.preventDefault();
+        g_perfDragging = true;
+        g_perfDragStartX = e.clientX;
+        g_perfDragOffset0 = g_perfOffset;
+      });
+      pv.addEventListener('mousemove', function(e){
+        if(!g_perfDragging) return;
+        var r = pv.getBoundingClientRect();
+        var pxPerSample = (r.width - 60) / (g_perfWin || 1);
+        var dSamples = (e.clientX - g_perfDragStartX) / pxPerSample;
+        g_perfOffset = Math.max(0, g_perfDragOffset0 - dSamples);
+        drawPerfCharts();
+      });
+    });
+    window.addEventListener('mouseup', function(){ g_perfDragging = false; });
   }, 200);
 }
 
@@ -1375,9 +1425,6 @@ function onSwitchTab(tab){
 }
 
 // ── perf monitoring ──
-var g_perfCtrlE2eMax = [];   /* ctrl_e2e_max 历史 (最近60) */
-var g_perfFbE2eMax = [];     /* fb_e2e_max 历史 (最近60) */
-var g_perfJitterMax = [];    /* jitter_max 历史 (最近60) */
 var g_perfSnapshots = [];    /* 保存 CSV 的快照 (最多1000) */
 var g_perfOverrun = 0;
 var g_perfLastOverrun = 0;
@@ -1388,11 +1435,28 @@ var g_perfPaused = false;
 var g_perfLastUpdate = 0;
 var g_perfLast = null;       /* 最后一份服务端快照, 供刷新/CSV */
 
+/* 逐帧监控数据 (来自独立 trace SHM 三 ring) */
+var g_trace = { ctrl:[], fb:[], jitter:[] };
+var g_traceMaxLen = 4000;    /* 4s @1kHz */
+
+function pushTrace(key, val){
+  if(val === undefined || val === null) return;
+  /* 0 语义: jitter=无抖动(有效, 画基线); 其余=本周期无数据(跳过保持曲线连续) */
+  if(val === 0 && key !== 'jitter') return;
+  var arr = g_trace[key];
+  arr.push(val);
+  if(arr.length > g_traceMaxLen) arr.shift();
+}
+
+function resetTrace(){
+  g_trace.ctrl.length = 0;
+  g_trace.fb.length = 0;
+  g_trace.jitter.length = 0;
+}
+
 function clearPerfData(){
   if(g_ws && g_connected){ try{g_ws.send('{"cmd":"perf_reset"}');}catch(e){} }
-  g_perfCtrlE2eMax = [];
-  g_perfFbE2eMax = [];
-  g_perfJitterMax = [];
+  resetTrace();
   g_perfSnapshots = [];
   g_perfOverrun = 0;
   g_perfLastOverrun = 0;
@@ -1405,9 +1469,7 @@ function clearPerfData(){
 }
 
 function refreshPerfPanel(){
-  g_perfCtrlE2eMax = [];
-  g_perfFbE2eMax = [];
-  g_perfJitterMax = [];
+  resetTrace();
   g_perfSnapshots = [];
   g_perfOverrun = 0;
   g_perfLastOverrun = 0;
@@ -1440,12 +1502,12 @@ function resetPerfUI(){
   if(oe) oe.textContent = '0';
   var or = document.getElementById('pm_overrun_rate');
   if(or) or.textContent = '0/min';
-  var vids = ['pm_mbox_min','pm_mbox_avg','pm_mbox_max',
-    'pm_ctrl_min','pm_ctrl_avg','pm_ctrl_max',
-    'pm_ctrl_e2e_min','pm_ctrl_e2e_avg','pm_ctrl_e2e_max',
-    'pm_fb_age_min','pm_fb_age_avg','pm_fb_age_max',
-    'pm_fb_total_min','pm_fb_total_avg','pm_fb_total_max',
-    'pm_fb_e2e_min','pm_fb_e2e_avg','pm_fb_e2e_max',
+  var vids = ['pm_dn_seg1_min','pm_dn_seg1_avg','pm_dn_seg1_max',
+    'pm_dn_seg2_min','pm_dn_seg2_avg','pm_dn_seg2_max',
+    'pm_dn_total_min','pm_dn_total_avg','pm_dn_total_max',
+    'pm_up_seg1_min','pm_up_seg1_avg','pm_up_seg1_max',
+    'pm_up_seg2_min','pm_up_seg2_avg','pm_up_seg2_max',
+    'pm_up_total_min','pm_up_total_avg','pm_up_total_max',
     'pm_jit_min','pm_jit_avg','pm_jit_max'];
   for(var j = 0; j < vids.length; j++){
     var el2 = document.getElementById(vids[j]);
@@ -1459,6 +1521,18 @@ function pushPerfSample(arr, val){
   if(val === undefined || val === null) return;
   arr.push(val);
   if(arr.length > 60) arr.shift();
+}
+
+function statsOf(arr){
+  if(!arr || !arr.length) return {min:0, avg:0, max:0, n:0};
+  var min = Infinity, max = -Infinity, sum = 0;
+  for(var i = 0; i < arr.length; i++){
+    var v = arr[i];
+    if(v < min) min = v;
+    if(v > max) max = v;
+    sum += v;
+  }
+  return {min: (min === Infinity ? 0 : min), avg: Math.round(sum / arr.length), max: (max === -Infinity ? 0 : max), n: arr.length};
 }
 
 function evalPerfGrade(jitterMax, periodUs){
@@ -1492,19 +1566,17 @@ function updatePerfPanel(d){
     g_perfOverrun = d.overrun;
   }
 
-  /* 历史趋势 (端到端/抖动 max) */
-  pushPerfSample(g_perfCtrlE2eMax, d.ctrl_e2e_max);
-  pushPerfSample(g_perfFbE2eMax, d.fb_e2e_max);
-  pushPerfSample(g_perfJitterMax, d.jitter_max);
-
   /* 快照 (CSV 保存) */
   if(g_perfSnapshots.length < 1000){
+    var cs = statsOf(g_trace.ctrl);
+    var fs = statsOf(g_trace.fb);
+    var js = statsOf(g_trace.jitter);
     g_perfSnapshots.push({
       t: new Date().toISOString(),
       rt_mode: d.rt_mode, period_us: d.period_us,
-      ctrl_e2e_avg: d.ctrl_e2e_avg, ctrl_e2e_max: d.ctrl_e2e_max,
-      fb_e2e_avg: d.fb_e2e_avg, fb_e2e_max: d.fb_e2e_max,
-      jitter_avg: d.jitter_avg, jitter_max: d.jitter_max,
+      ctrl_avg: cs.avg, ctrl_max: cs.max,
+      fb_avg: fs.avg, fb_max: fs.max,
+      jitter_avg: js.avg, jitter_max: js.max,
       overrun: d.overrun
     });
   }
@@ -1551,26 +1623,38 @@ function renderPerfPanel(d){
   var ovRate = document.getElementById('pm_overrun_rate');
   if(ovRate) ovRate.textContent = g_perfOverrunRate.toFixed(1) + '/min';
 
-  /* 下行 Ctrl */
-  setPV('pm_mbox_min', d.mbox_age_min); setPV('pm_mbox_avg', d.mbox_age_avg); setPV('pm_mbox_max', d.mbox_age_max);
-  setPV('pm_ctrl_min', d.ctrl_total_min); setPV('pm_ctrl_avg', d.ctrl_total_avg); setPV('pm_ctrl_max', d.ctrl_total_max);
-  setPV('pm_ctrl_e2e_min', d.ctrl_e2e_min); setPV('pm_ctrl_e2e_avg', d.ctrl_e2e_avg); setPV('pm_ctrl_e2e_max', d.ctrl_e2e_max);
-  /* 上行 Fb */
-  setPV('pm_fb_age_min', d.fb_age_min); setPV('pm_fb_age_avg', d.fb_age_avg); setPV('pm_fb_age_max', d.fb_age_max);
-  setPV('pm_fb_total_min', d.fb_total_min); setPV('pm_fb_total_avg', d.fb_total_avg); setPV('pm_fb_total_max', d.fb_total_max);
-  setPV('pm_fb_e2e_min', d.fb_e2e_min); setPV('pm_fb_e2e_avg', d.fb_e2e_avg); setPV('pm_fb_e2e_max', d.fb_e2e_max);
-  /* 抖动 */
-  setPV('pm_jit_min', d.jitter_min); setPV('pm_jit_avg', d.jitter_avg); setPV('pm_jit_max', d.jitter_max);
+  var js = statsOf(g_trace.jitter);
+  /* 分段统计来自服务端 trace_stat (唯一写者聚合, 真实 min/avg/max) */
+  var ts = d.trace_stat || {};
+  function setStatRow(prefix, st){
+    if(st && st.n > 0){
+      setPV(prefix + '_min', st.min);
+      setPV(prefix + '_avg', st.avg);
+      setPV(prefix + '_max', st.max);
+    } else {
+      setPV(prefix + '_min', '--');
+      setPV(prefix + '_avg', '--');
+      setPV(prefix + '_max', '--');
+    }
+  }
+  setStatRow('pm_dn_seg1', ts.dn_seg1);
+  setStatRow('pm_dn_seg2', ts.dn_seg2);
+  setStatRow('pm_dn_total', ts.dn_total);
+  setStatRow('pm_up_seg1', ts.up_seg1);
+  setStatRow('pm_up_seg2', ts.up_seg2);
+  setStatRow('pm_up_total', ts.up_total);
+  /* 抖动 (前端滚动窗口统计) */
+  setPV('pm_jit_min', js.min); setPV('pm_jit_avg', js.avg); setPV('pm_jit_max', js.max);
 
   var sum = document.getElementById('pm_summary');
   if(sum){
-    sum.textContent = '已采样 ' + (d.trace_cycles !== undefined ? d.trace_cycles : 0) + ' 个周期 · ' +
+    var dnN = (ts.dn_total && ts.dn_total.n) || 0;
+    var upN = (ts.up_total && ts.up_total.n) || 0;
+    sum.textContent = '下行 ' + dnN + ' · 上行 ' + upN + ' · 抖动 ' + js.n + ' 样本 · ' +
       '调度 ' + (d.rt_mode ? 'SCHED_FIFO' : 'SCHED_OTHER') +
       (d.rt_priority !== undefined ? ' prio ' + d.rt_priority : '') +
       (d.rt_cpu !== undefined ? ' core ' + d.rt_cpu : '') +
-      ' · 抖动 max ' + (d.jitter_max !== undefined ? d.jitter_max : '--') + ' μs' +
-      ' · 端到端 ctrl ' + (d.ctrl_e2e_avg !== undefined ? d.ctrl_e2e_avg : '--') + ' μs' +
-      ' / fb ' + (d.fb_e2e_avg !== undefined ? d.fb_e2e_avg : '--') + ' μs';
+      ' · 抖动 max ' + (js.max !== undefined ? js.max : '--') + ' μs';
   }
 
   if(g_currentTab === 'perf') drawPerfCharts();
@@ -1581,13 +1665,13 @@ function savePerfCsv(){
     alert('暂无采样数据, 请先等待数据刷新');
     return;
   }
-  var hdr = '时间,调度,周期us,ctrl_e2e_avg_us,ctrl_e2e_max_us,fb_e2e_avg_us,fb_e2e_max_us,jitter_avg_us,jitter_max_us,overrun';
+  var hdr = '时间,调度,周期us,dn_total_avg_us,dn_total_max_us,up_total_avg_us,up_total_max_us,jitter_avg_us,jitter_max_us,overrun';
   var rows = [hdr];
   for(var i = 0; i < g_perfSnapshots.length; i++){
     var s = g_perfSnapshots[i];
     var mode = s.rt_mode ? 'SCHED_FIFO' : 'SCHED_OTHER';
-    rows.push([s.t, mode, s.period_us, s.ctrl_e2e_avg, s.ctrl_e2e_max,
-               s.fb_e2e_avg, s.fb_e2e_max, s.jitter_avg, s.jitter_max, s.overrun].join(','));
+    rows.push([s.t, mode, s.period_us, s.ctrl_avg, s.ctrl_max,
+               s.fb_avg, s.fb_max, s.jitter_avg, s.jitter_max, s.overrun].join(','));
   }
   var csv = rows.join('\n');
   var bom = String.fromCharCode(0xFEFF);
@@ -1609,11 +1693,11 @@ function setPV(id, val){
 
 function drawPerfCharts(){
   drawPerfMultiChart('perf_canvas_e2e', [
-    {data: g_perfCtrlE2eMax, color: '#0ea5e9', name: 'ctrl_e2e_max'},
-    {data: g_perfFbE2eMax,   color: '#8b5cf6', name: 'fb_e2e_max'}
+    {data: g_trace.ctrl, color: '#0ea5e9', name: 'dn_total'},
+    {data: g_trace.fb,   color: '#8b5cf6', name: 'up_total'}
   ]);
   drawPerfMultiChart('perf_canvas_jitter', [
-    {data: g_perfJitterMax, color: '#f59e0b', name: 'jitter_max'}
+    {data: g_trace.jitter, color: '#f59e0b', name: 'jitter'}
   ]);
 }
 
@@ -1622,6 +1706,14 @@ function avgOf(arr){
   var s = 0;
   for(var i = 0; i < arr.length; i++) s += arr[i];
   return Math.round(s / arr.length);
+}
+
+/* 窗口内平均 [s, e) */
+function winAvg(arr, s, e){
+  if(!arr || s >= e) return 0;
+  var sum = 0, n = 0;
+  for(var i = s; i < e; i++){ sum += arr[i]; n++; }
+  return Math.round(sum / n);
 }
 
 function drawPerfMultiChart(canvasId, series){
@@ -1637,15 +1729,29 @@ function drawPerfMultiChart(canvasId, series){
   var ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, W, H);
 
-  var hasData = false, n = 0, vmax = 1;
+  var M = {t: 10, r: 10, b: 24, l: 50};
+  var pw = W - M.l - M.r, ph = H - M.t - M.b;
+
+  /* 窗口: 以最长序列为基准, 显示最近 winCount 个样本, g_perfOffset 往回拖 */
+  var totalLen = 0;
   for(var i = 0; i < series.length; i++){
-    if(series[i].data && series[i].data.length){
-      hasData = true;
-      if(series[i].data.length > n) n = series[i].data.length;
-      for(var j = 0; j < series[i].data.length; j++){
-        if(series[i].data[j] > vmax) vmax = series[i].data[j];
-      }
-    }
+    var dl = series[i].data ? series[i].data.length : 0;
+    if(dl > totalLen) totalLen = dl;
+  }
+  var maxOff = Math.max(0, totalLen - g_perfWin);
+  if(g_perfOffset > maxOff) g_perfOffset = maxOff;
+  if(g_perfOffset < 0) g_perfOffset = 0;
+  var winCount = totalLen - g_perfOffset;
+  if(winCount > g_perfWin) winCount = g_perfWin;
+
+  /* 窗口内统计 vmax */
+  var hasData = false, vmax = 1;
+  for(var i = 0; i < series.length; i++){
+    var d = series[i].data || [];
+    if(!d.length) continue;
+    var tail = d.length - g_perfOffset; if(tail < 0) tail = 0;
+    var s0 = Math.max(0, tail - winCount);
+    for(var j = s0; j < tail; j++){ hasData = true; if(d[j] > vmax) vmax = d[j]; }
   }
   if(!hasData){
     ctx.fillStyle = '#94a3b8'; ctx.font = (12*dpr) + 'px sans-serif';
@@ -1653,12 +1759,8 @@ function drawPerfMultiChart(canvasId, series){
     ctx.fillText('-- 等待数据...', W/2, H/2);
     return;
   }
-  if(n < 1) n = 1;
   if(vmax < 10) vmax = 10;
   vmax = Math.ceil(vmax * 1.2);
-
-  var M = {t: 10, r: 10, b: 24, l: 50};
-  var pw = W - M.l - M.r, ph = H - M.t - M.b;
 
   /* grid */
   ctx.strokeStyle = '#eee'; ctx.lineWidth = 0.5 * dpr;
@@ -1676,29 +1778,39 @@ function drawPerfMultiChart(canvasId, series){
   }
   ctx.fillText('μs', M.l - 6*dpr, M.t - 2*dpr);
 
-  /* bars (每序列一组, 组内并排) */
-  var groupW = pw / n;
-  var barW = Math.max(2*dpr, groupW / series.length * 0.7);
+  /* lines (窗口内折线, 右侧对齐到最新) */
   for(var s = 0; s < series.length; s++){
     var data = series[s].data || [];
-    for(var j = 0; j < data.length; j++){
-      var x = M.l + j*groupW + s*(groupW/series.length) + (groupW/series.length - barW)/2;
-      var bh = Math.max(1, (data[j] / vmax) * ph);
-      var y = M.t + ph - bh;
-      ctx.fillStyle = series[s].color;
-      ctx.fillRect(x, y, barW, bh);
+    if(data.length < 2) continue;
+    var tail = data.length - g_perfOffset; if(tail < 0) tail = 0;
+    var s0 = Math.max(0, tail - winCount);
+    var n = tail - s0;
+    if(n < 2) continue;
+    ctx.strokeStyle = series[s].color;
+    ctx.lineWidth = 1.2 * dpr;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for(var j = 0; j < n; j++){
+      var k = j + (winCount - n);
+      var x = M.l + k * (pw / (winCount - 1));
+      var y = M.t + ph - (data[s0 + j] / vmax) * ph;
+      if(j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
+    ctx.stroke();
   }
 
   /* baseline */
   ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.5 * dpr;
   ctx.beginPath(); ctx.moveTo(M.l, M.t + ph); ctx.lineTo(W - M.r, M.t + ph); ctx.stroke();
 
-  /* legend */
+  /* legend (窗口内平均) */
   var lx = M.l;
   ctx.textAlign = 'left';
   for(var s = 0; s < series.length; s++){
-    var name = series[s].name + ' avg=' + avgOf(series[s].data);
+    var d = series[s].data || [];
+    var tail = d.length - g_perfOffset; if(tail < 0) tail = 0;
+    var s0 = Math.max(0, tail - winCount);
+    var name = series[s].name + ' avg=' + winAvg(d, s0, tail);
     ctx.fillStyle = series[s].color; ctx.font = (9*dpr) + 'px sans-serif';
     ctx.fillText(name, lx, M.t - 2*dpr);
     lx += ctx.measureText(name).width + 12*dpr;

@@ -30,7 +30,7 @@ extern "C" {
 }
 
 #include "motor/motor_ctrl.h"
-#include "imu/imu_sensor.h"
+#include "imu/imu_source.h"
 #include "foot_pressure/FootPressureSensor.h"
 #include "motor/motor_rt_worker.h"
 
@@ -53,7 +53,7 @@ public:
     motor_hal_t*   GetHal()       { return m_hal; }
     stark_shm_t*     GetShm()       { return m_shm; }
     StarkMotorCtrl*  GetCtrl()      { return m_ctrl.get(); }
-    ImuHALSensor*  GetImuSensor() { return m_imu_sensor.get(); }
+    IImuSource*   GetImuSensor() { return m_imu_sensor.get(); }
     FootPressureSensor* GetFootPressureSensor() { return m_foot_sensor.get(); }
 
     /* 配置 (从 config.json 读取, 或默认值) */
@@ -111,12 +111,9 @@ private:
     int          m_can_arb_rate  = 1000000;
     int          m_can_data_rate = 5000000;
 
-    /* IMU HAL */
-    std::unique_ptr<ImuHALSensor> m_imu_sensor;
-    std::string  m_imu_i2c_dev    = "/dev/i2c-3";
-    std::string  m_imu_gpio_chip  = "gpiochip4";
-    unsigned int m_imu_gpio_line  = 6;
-    int          m_imu_op_mode    = 5;
+    /* IMU */
+    std::unique_ptr<IImuSource> m_imu_sensor;
+    ImuConfig    m_imu_cfg;
 
     /* 足底压力传感器 */
     std::unique_ptr<FootPressureSensor> m_foot_sensor;

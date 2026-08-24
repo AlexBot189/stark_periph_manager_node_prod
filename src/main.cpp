@@ -30,6 +30,7 @@ extern "C" {
 #include "utils/factory.h"
 #include "main_loop/main_loop.h"
 #include "stark_shm.h"
+#include "shm/shm_mgr.h"
 
 #ifdef ENABLE_WEBSERVER
 #include "web/WebServer.h"
@@ -107,6 +108,25 @@ int main(int argc, char** argv)
     RtConfig rt_cfg = g_dispatcher->GetRtConfig();
     g_rt_worker->SetRtConfig(rt_cfg);
 
+    /* 打开独立逐帧监控 SHM (与主 SHM 分离, 失败不阻塞启动).
+     * static 保证映射存活到进程退出, 避免 WebServer 线程访问已释放内存. */
+    static stark_shm_mgr_t* s_trace_mgr =
+        stark_shm_mgr_open(STARK_TRACE_SHM_NAME, true, STARK_TRACE_SHM_SIZE);
+    stark_trace_shm_t* trace_shm = nullptr;
+    if (s_trace_mgr && s_trace_mgr->ptr) {
+        trace_shm = (stark_trace_shm_t*)s_trace_mgr->ptr;
+        if (trace_shm->magic != STARK_TRACE_MAGIC) {
+            memset(trace_shm, 0, STARK_TRACE_SHM_SIZE);
+            trace_shm->magic = STARK_TRACE_MAGIC;
+        }
+        trace_shm->period_us = rt_cfg.period_us;
+        trace_shm->enabled   = rt_cfg.perf_trace ? 1 : 0;
+        g_rt_worker->SetTraceShm(trace_shm);
+        ECO_INFO_NEW("[main] trace SHM ready (enabled={})", trace_shm->enabled);
+    } else {
+        ECO_INFO_NEW("[main] trace SHM unavailable, per-frame monitor disabled");
+    }
+
     ECO_INFO_NEW("[main] RT worker created (not started yet)");
 
     /* 启动日志 drain 线程 */
@@ -167,6 +187,7 @@ int main(int argc, char** argv)
         if (ws_enabled) {
             static WebServer* g_ws = new WebServer(shm, ws_port, ws_pp);
             g_ws->SetMotorHal(hal);
+            g_ws->SetTraceShm(trace_shm);
             g_ws->Start();
             ECO_INFO_NEW("[main] WebServer enabled on :{}", ws_port);
             ECO_INFO_NEW("[main]   open browser -> stark_node_debug.html");

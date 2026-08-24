@@ -64,6 +64,9 @@ public:
     /* ── 设置 motor_hal (用于 SDO 控制命令) ── */
     void SetMotorHal(motor_hal_t* hal) { m_motor_hal = hal; }
 
+    /* ── 设置逐帧监控 SHM (main 打开后注入) ── */
+    void SetTraceShm(stark_trace_shm_t* p) { m_trace_shm = p; }
+
 private:
     /**
      * @brief 主循环 — 200Hz 从 SHM 读反馈帧, JSON 序列化, push 到 WebSocket
@@ -77,11 +80,21 @@ private:
      */
     void PullLoop();
 
+    /** @brief 读逐帧监控 SHM, 构造增量 trace JSON 片段 (增量: 上次 head 之后的新样本) */
+    std::string BuildTraceJson();
+
     /* ── 外部依赖 ── */
     stark_shm_t*      m_shm;
+    stark_trace_shm_t* m_trace_shm = nullptr;  /* 独立逐帧监控 SHM */
     motor_hal_t*    m_motor_hal = nullptr;
     uint16_t        m_port;
     uint32_t        m_push_period_us;  /* push interval in microseconds */
+
+    /* ── 逐帧监控增量推送状态 ── */
+    uint32_t        m_trace_last_ctrl_head = 0;   /* 已推送的 ctrl ring 游标 */
+    uint32_t        m_trace_last_fb_head = 0;     /* 已推送的 fb ring 游标 */
+    uint32_t        m_trace_last_jitter_head = 0; /* 已推送的 jitter ring 游标 */
+    bool            m_trace_synced = false;  /* 首次是否已做窗口对齐 */
 
     /* ── 网络 ── */
     int              m_listen_fd = -1;

@@ -60,6 +60,25 @@ typedef struct {
     stark_shm_t*  shm;
 } stark_client_t;
 
+/* 逐帧耗时跟踪句柄 (提前定义, 供反馈读取函数自动打点) */
+typedef struct {
+    int                 fd;
+    stark_trace_shm_t*  shm;
+} stark_trace_t;
+
+/* 进程内全局 trace 句柄 (stark_trace_open 设置, close 清除).
+ * 每个 .c 文件持有独立副本, 互不影响. */
+static stark_trace_t* g_stark_trace = NULL;
+
+static inline void stark_trace_fb_update(stark_client_t* c, stark_trace_t* t);
+
+/* 读取反馈即打点: 只要有反馈数据被读取, 就统计上行耗时.
+ * 按帧去重 (ts_shm_write), 同一帧多次读取只统计一次. */
+static inline void stark_trace_fb_tick(stark_client_t* c)
+{
+    if (g_stark_trace && g_stark_trace->shm) stark_trace_fb_update(c, g_stark_trace);
+}
+
 static inline void stark_close(stark_client_t* c);
 
 /* -- 生命周期 ---------------------------------------------------- */
@@ -144,6 +163,7 @@ static inline motor_data_t stark_fb(stark_client_t* c, int id)
     if (!c || !c->shm || id < 1 || id > STARK_MAX_MOTORS) return fb;
 
     uint32_t idx = __atomic_load_n(&c->shm->active_idx, __ATOMIC_ACQUIRE);
+    stark_trace_fb_tick(c);   /* 读取即打点 (上行耗时统计) */
     const feedback_frame_t* f = &c->shm->fb_buffer[idx];
     return f->motor[id - 1];
 }
@@ -154,6 +174,7 @@ static inline imu_data_t stark_imu(stark_client_t* c)
     if (!c || !c->shm) return imu;
 
     uint32_t idx = __atomic_load_n(&c->shm->active_idx, __ATOMIC_ACQUIRE);
+    stark_trace_fb_tick(c);
     return c->shm->fb_buffer[idx].imu;
 }
 
@@ -163,6 +184,7 @@ static inline stark_sensor_data_t stark_sensor(stark_client_t* c, int id)
     if (!c || !c->shm || id < 1 || id > STARK_MAX_MOTORS) return s;
 
     uint32_t idx = __atomic_load_n(&c->shm->active_idx, __ATOMIC_ACQUIRE);
+    stark_trace_fb_tick(c);
     return c->shm->fb_buffer[idx].sensor[id - 1];
 }
 
@@ -172,6 +194,7 @@ static inline barometer_data_t stark_baro(stark_client_t* c)
     if (!c || !c->shm) return b;
 
     uint32_t idx = __atomic_load_n(&c->shm->active_idx, __ATOMIC_ACQUIRE);
+    stark_trace_fb_tick(c);
     return c->shm->fb_buffer[idx].baro;
 }
 
@@ -181,6 +204,7 @@ static inline foot_pressure_data_t stark_foot_pressure(stark_client_t* c)
     if (!c || !c->shm) return fp;
 
     uint32_t idx = __atomic_load_n(&c->shm->active_idx, __ATOMIC_ACQUIRE);
+    stark_trace_fb_tick(c);
     return c->shm->fb_buffer[idx].foot_pressure;
 }
 
@@ -760,6 +784,85 @@ static inline int stark_report_wait(stark_client_t* c, uint32_t *last_ver,
         if (errno == EINTR && timeout_ms < 0) continue; /* 无限等待被信号打断, 重进 */
         return 0;                                       /* 超时 / 被打断, 本次无新数据 */
     }
+}
+
+/* -- 逐帧耗时跟踪 (独立 trace SHM, 上行打点) -------------------- */
+
+static inline int stark_trace_open(stark_trace_t* t)
+{
+    if (!t) return -1;
+    t->fd  = -1;
+    t->shm = NULL;
+    int fd = shm_open(STARK_TRACE_SHM_NAME, O_RDWR, 0666);
+    if (fd < 0) return -1;
+    void* p = mmap(NULL, STARK_TRACE_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (p == MAP_FAILED) { close(fd); return -1; }
+    t->fd  = fd;
+    t->shm = (stark_trace_shm_t*)p;
+    g_stark_trace = t;   /* 注册全局句柄, 反馈读取函数自动打点 */
+    return 0;
+}
+
+static inline void stark_trace_close(stark_trace_t* t)
+{
+    if (!t || !t->shm) return;
+    munmap(t->shm, STARK_TRACE_SHM_SIZE);
+    close(t->fd);
+    t->shm = NULL;
+    t->fd  = -1;
+    g_stark_trace = NULL;
+}
+
+/*
+ * 上行反馈打点 (demo_algo 读透传数据后调用):
+ *   读 active fb_buffer 的 ts_can_rx / ts_shm_read 时间戳,
+ *   计算 up_seg2 = now - ts_shm_read, up_total = now - ts_can_rx,
+ *   聚合统计并逐帧写 fb ring (上行总曲线).
+ *
+ * 真实性保障:
+ *   - 校验 ts_can_rx/ts_shm_read 合法性, 时间戳单调性
+ *   - 按 ts_shm_write 去重, 每帧只统计一次
+ *   - 过滤异常大值 (>100ms, 跨周期错位/电机离线)
+ */
+static inline void stark_trace_fb_update(stark_client_t* c, stark_trace_t* t)
+{
+    if (!c || !c->shm || !t || !t->shm) return;
+    if (!__atomic_load_n(&t->shm->enabled, __ATOMIC_ACQUIRE)) return;
+
+    uint32_t idx = __atomic_load_n(&c->shm->active_idx, __ATOMIC_ACQUIRE);
+    const feedback_frame_t* f = &c->shm->fb_buffer[idx];
+
+    uint64_t now      = _stark_now_us();
+    uint64_t can_rx   = f->ts_can_rx;
+    uint64_t shm_read = f->ts_shm_read;
+
+    /* 时间戳合法性校验, 防虚假耗时 */
+    if (can_rx == 0 || shm_read == 0) return;
+    if (shm_read < can_rx || now < shm_read) return;
+
+    /* 按帧去重: 同一 ts_shm_write (组装时刻) 只统计一次 */
+    static uint64_t last_ts_shm_write = 0;
+    if (f->ts_shm_write == last_ts_shm_write) return;
+    last_ts_shm_write = f->ts_shm_write;
+
+    uint64_t seg2  = now - shm_read;   /* rt读 → demo_algo读到 */
+    uint64_t total = now - can_rx;     /* can0 → demo_algo读到 */
+    if (seg2 > 100000 || total > 100000) return;   /* 过滤异常值 */
+
+    /* 聚合统计 (单写者: demo_algo) */
+    trace_stat_update(&t->shm->up_seg2, seg2);
+    trace_stat_update(&t->shm->up_total, total);
+
+    /* 逐帧写 fb ring (上行总曲线) */
+    uint32_t h = __atomic_load_n(&t->shm->fb_head, __ATOMIC_RELAXED);
+    trace_sample_t* s = &t->shm->fb_samples[h % STARK_TRACE_FB_RING];
+    s->cycle    = (uint32_t)(__atomic_load_n(&c->shm->rt_cycle, __ATOMIC_ACQUIRE) & 0xFFFFFFFF);
+    s->kind     = TRACE_KIND_FB;
+    s->e2e_us   = (uint16_t)(total > 65535 ? 65535 : total);
+    s->motor_id = 0;
+    s->reserved = 0;
+    s->ts_us    = (uint32_t)(can_rx & 0xFFFFFFFF);
+    __atomic_store_n(&t->shm->fb_head, h + 1, __ATOMIC_RELEASE);
 }
 
 #ifdef __cplusplus

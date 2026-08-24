@@ -9,9 +9,8 @@
  */
 #include "motor/motor_rt_worker.h"
 #include "utils/rt_log.h"
-#include "utils/latency_trace.h"
 #include "motor/motor_ctrl.h"
-#include "imu/imu_sensor.h"
+#include "imu/imu_source.h"
 #include "foot_pressure/FootPressureSensor.h"
 #include <log_helper/LogHelper.h>
 
@@ -32,10 +31,18 @@
 
 namespace stark_periph_manager_node {
 
+/* CLOCK_MONOTONIC 当前时刻 (us), vDSO 直取 ~20ns 开销 */
+static inline uint64_t _rt_now_us()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
+}
+
 /* 构造 / 析构 */
 
 StarkRtWorker::StarkRtWorker(motor_hal_t* hal, stark_shm_t* shm,
-                         StarkMotorCtrl* ctrl, ImuHALSensor* imu_sensor,
+                         StarkMotorCtrl* ctrl, IImuSource* imu_sensor,
                          FootPressureSensor* foot_sensor,
                          int motor_count)
     : m_hal(hal)
@@ -44,8 +51,6 @@ StarkRtWorker::StarkRtWorker(motor_hal_t* hal, stark_shm_t* shm,
     , m_imu_sensor(imu_sensor)
     , m_foot_sensor(foot_sensor)
     , m_motor_count(motor_count)
-    , m_can_last_frame_us(0)
-    , m_latency_idx(0)
     , m_report_divider(m_rt.report_divider)
     , m_report_enabled(false)
     , m_report_period_ms(5)
@@ -60,7 +65,6 @@ StarkRtWorker::StarkRtWorker(motor_hal_t* hal, stark_shm_t* shm,
     memset(m_last_position, 0, sizeof(m_last_position));
     memset(m_pos_stall_us, 0, sizeof(m_pos_stall_us));
     memset(m_sensor_notified, 0, sizeof(m_sensor_notified));
-    memset(m_latency_history, 0, sizeof(m_latency_history));
     /* 初始: 无效模式 (0xFF), 确保首帧触发模式切换双发, 防首帧丢失 */
     for (int i = 0; i < STARK_MAX_MOTORS; i++) m_last_pdo_mode[i] = (motor_mode_t)0xFF;
     memset(m_pending_retry, 0, sizeof(m_pending_retry));
@@ -95,7 +99,6 @@ void StarkRtWorker::SetRtConfig(const RtConfig& cfg)
 {
     m_rt = cfg;
     m_report_divider      = cfg.report_divider;  /* 立即生效 */
-    m_tracer.SetEnabled(cfg.perf_trace);         /* 实时性能统计开关 (rt.perf_trace) */
 }
 
 void StarkRtWorker::SetReportEnabled(bool enabled, uint32_t period_ms)
@@ -143,22 +146,17 @@ void StarkRtWorker::Run()
 
     while (m_running.load(std::memory_order_acquire)) {
 
+        m_cur_jitter = 0;   /* 本周期抖动, 睡眠后测量 */
+
         /* 消费 perf_reset_request: web/算法下发"清空"→清零本轮 max, 重新累计 */
         if (m_shm && __atomic_load_n(&m_shm->perf_reset_request, __ATOMIC_ACQUIRE)) {
             __atomic_store_n(&m_shm->perf_reset_request, 0, __ATOMIC_RELEASE);
-            m_tracer.reset_run_max();
-            m_fb_age_max_run   = 0;
-            m_mbox_age_max_run = 0;
-            m_ctrl_max_run     = 0;
             m_jitter_max_us    = 0;
         }
 
         ProcessMgmt();
         ProcessMailbox();
         PublishFeedback();
-
-        /* ⑤ 提交延迟样本 (perf_trace 关闭时内部直接返回, 零开销) */
-        m_tracer.commit_sample();
 
         m_cycle_count++;
 
@@ -178,6 +176,7 @@ void StarkRtWorker::Run()
          * 实际唤醒时刻 - 理想目标时刻, 这是"错过截止期"的真实度量.
          * 注意: clock_nanosleep 返回非0 = 被信号打断(EINTR), 并非超限;
          * 原实现用 ret!=0 统计超限是错误的(永远≈0), 已修正为 actual>target. */
+        m_cur_jitter = 0;
         if (m_rt.perf_trace) {
             struct timespec now_ts;
             clock_gettime(CLOCK_MONOTONIC, &now_ts);
@@ -185,6 +184,7 @@ void StarkRtWorker::Run()
             uint64_t target_us = (uint64_t)next_wake.tv_sec * 1000000ULL + (uint64_t)next_wake.tv_nsec / 1000ULL;
             if (actual_us > target_us) {
                 uint32_t j = (uint32_t)(actual_us - target_us);
+                m_cur_jitter = j;
                 if (j < m_jitter_min_us) m_jitter_min_us = j;
                 if (j > m_jitter_max_us) m_jitter_max_us = j;
                 m_jitter_acc_us += j;
@@ -205,8 +205,6 @@ void StarkRtWorker::Run()
                    m_jitter_min_us, avg, m_jitter_max_us, m_jitter_cnt,
                    (unsigned long long)m_overrun_count);
             if (m_shm) {
-                m_shm->cycle_jitter_min_us = (uint16_t)(m_jitter_min_us > 65535 ? 65535 : m_jitter_min_us);
-                m_shm->cycle_jitter_avg_us = (uint16_t)(avg > 65535 ? 65535 : avg);
                 m_shm->cycle_jitter_max_us = m_jitter_max_us;
             }
             m_jitter_min_us = UINT32_MAX;
@@ -214,6 +212,9 @@ void StarkRtWorker::Run()
             m_jitter_acc_us = 0;
             m_jitter_cnt = 0;
         }
+
+        /* 逐帧监控: 写本周期抖动样本到 jitter ring (16字节, 开销可忽略) */
+        PublishTrace();
     }
 }
 
@@ -373,8 +374,6 @@ void StarkRtWorker::ProcessMailbox()
 
     if (r >= w) return;  /* 无新数据 */
 
-    m_tracer.mark_mailbox_read();
-
     /* 消费所有待处理帧 */
     uint64_t count = w - r;
     if (count > STARK_MBOX_DEPTH) count = STARK_MBOX_DEPTH;
@@ -383,6 +382,8 @@ void StarkRtWorker::ProcessMailbox()
         uint64_t idx = (r + n) % STARK_MBOX_DEPTH;
         motor_command_t cmd0 = m_shm->mailbox.frames[idx].cmd[0];
         motor_command_t cmd1 = m_shm->mailbox.frames[idx].cmd[1];
+        /* 下行段1终点: RT 读到 mailbox 帧的时刻 */
+        m_mailbox_read_us = _rt_now_us();
         if (_stark_tx_dbg()) { _stark_dbg_tx(cmd0); _stark_dbg_tx(cmd1); }
 
         /* Byte0 管理命令 (改 pdo_byte0) */
@@ -436,6 +437,10 @@ void StarkRtWorker::ProcessMailbox()
                 (float)cmd1.mit_kp / 100.0f,
                 (float)cmd1.mit_kd / 100.0f,
                 (float)((int16_t)(cmd1.mit_torque << 4)) / 16.0f);
+            uint64_t origin = (cmd0.timestamp_us > 0 &&
+                               (cmd1.timestamp_us == 0 || cmd0.timestamp_us <= cmd1.timestamp_us))
+                                  ? cmd0.timestamp_us : cmd1.timestamp_us;
+            PublishCtrlSample(TRACE_KIND_CTRL_MULTI, 0, origin);
         }
         /* 控制命令 (通过 pdo_byte0 发 PDO) */
         else if (cmd0.cmd == STARK_CMD_MULTI || cmd1.cmd == STARK_CMD_MULTI) {
@@ -462,7 +467,15 @@ void StarkRtWorker::ProcessMailbox()
                 mcmds[mcount].feedforward   = (int16_t)c.feedforward;
                 mcount++;
             }
-            if (mcount > 0) motor_hal_multi_ctrl(m_hal, mcmds, (uint8_t)mcount);
+            if (mcount > 0) {
+                motor_hal_multi_ctrl(m_hal, mcmds, (uint8_t)mcount);
+                uint64_t origin = 0;
+                for (int i = 0; i < 2; i++) {
+                    uint64_t t = (i == 0) ? cmd0.timestamp_us : cmd1.timestamp_us;
+                    if (t > 0 && (origin == 0 || t < origin)) origin = t;
+                }
+                PublishCtrlSample(TRACE_KIND_CTRL_MULTI, 0, origin);
+            }
         } else {
             for (int i = 0; i < m_motor_count; i++) {
                 motor_command_t c = (i == 0) ? cmd0 : cmd1;
@@ -481,6 +494,7 @@ void StarkRtWorker::ProcessMailbox()
                         mcmd.release_brake = true;
                         mcmd.target1       = torque_target;
                         _pdo_send_with_switch(m_hal, &mcmd, &m_last_pdo_mode[si], MOTOR_MODE_TORQUE, si, m_pending_retry);
+                        PublishCtrlSample(TRACE_KIND_CTRL_SINGLE, mid, c.timestamp_us);
                     }
                     break;
                 case STARK_CMD_TORQUE:
@@ -494,6 +508,7 @@ void StarkRtWorker::ProcessMailbox()
                         mcmd.release_brake = true;
                         mcmd.target1       = (int16_t)ma;
                         _pdo_send_with_switch(m_hal, &mcmd, &m_last_pdo_mode[si], MOTOR_MODE_CURRENT, si, m_pending_retry);
+                        PublishCtrlSample(TRACE_KIND_CTRL_SINGLE, mid, c.timestamp_us);
                     }
                     break;
                 case STARK_CMD_SPEED:
@@ -508,6 +523,7 @@ void StarkRtWorker::ProcessMailbox()
                         mcmd.release_brake = true;
                         mcmd.target1       = (int16_t)rpm;
                         _pdo_send_with_switch(m_hal, &mcmd, &m_last_pdo_mode[si], MOTOR_MODE_CSV, si, m_pending_retry);
+                        PublishCtrlSample(TRACE_KIND_CTRL_SINGLE, mid, c.timestamp_us);
                     }
                     break;
                 case STARK_CMD_PV:
@@ -523,6 +539,7 @@ void StarkRtWorker::ProcessMailbox()
                         mcmd.target1       = (int16_t)rpm;
                         mcmd.target2       = accel;
                         _pdo_send_with_switch(m_hal, &mcmd, &m_last_pdo_mode[si], MOTOR_MODE_PROFILE_VEL, si, m_pending_retry);
+                        PublishCtrlSample(TRACE_KIND_CTRL_SINGLE, mid, c.timestamp_us);
                     }
                     break;
                 case STARK_CMD_POS:
@@ -537,6 +554,7 @@ void StarkRtWorker::ProcessMailbox()
                         mcmd.release_brake = true;
                         mcmd.target1       = (int16_t)cnt;
                         _pdo_send_with_switch(m_hal, &mcmd, &m_last_pdo_mode[si], MOTOR_MODE_CSP, si, m_pending_retry);
+                        PublishCtrlSample(TRACE_KIND_CTRL_SINGLE, mid, c.timestamp_us);
                     }
                     break;
                 case STARK_CMD_PP:
@@ -555,6 +573,7 @@ void StarkRtWorker::ProcessMailbox()
                         mcmd.target2       = accel;
                         mcmd.feedforward   = vel;
                         _pdo_send_with_switch(m_hal, &mcmd, &m_last_pdo_mode[si], MOTOR_MODE_PROFILE_POS, si, m_pending_retry);
+                        PublishCtrlSample(TRACE_KIND_CTRL_SINGLE, mid, c.timestamp_us);
                     }
                     break;
                 case STARK_CMD_MIT:
@@ -565,7 +584,9 @@ void StarkRtWorker::ProcessMailbox()
                         (float)((int16_t)(c.mit_vel << 4)) / 16.0f,
                         (float)c.mit_kp / 100.0f,
                         (float)c.mit_kd / 100.0f,
-                        (float)((int16_t)(c.mit_torque << 4)) / 16.0f); break;
+                        (float)((int16_t)(c.mit_torque << 4)) / 16.0f);
+                    PublishCtrlSample(TRACE_KIND_CTRL_SINGLE, mid, c.timestamp_us);
+                    break;
                 /* SDO 命令: 转发到 sdo_cmds, 主循环处理 */
                 case STARK_CMD_SDO_CUR:
                 case STARK_CMD_SDO_POS:
@@ -593,43 +614,6 @@ void StarkRtWorker::ProcessMailbox()
 
     /* 确认消费 */
     __atomic_store_n(&m_shm->mailbox.seq_read, r + count, __ATOMIC_RELEASE);
-
-    /* mbox_age: 算法写 mailbox → RT 读到 (仅 rt.perf_trace 时统计) */
-    if (m_rt.perf_trace && count > 0) {
-        struct timespec ts_mbox;
-        clock_gettime(CLOCK_MONOTONIC, &ts_mbox);
-        uint64_t mbox_read_us = (uint64_t)ts_mbox.tv_sec * 1000000ULL + (uint64_t)ts_mbox.tv_nsec / 1000ULL;
-
-        uint64_t last_idx = (r + count - 1) % STARK_MBOX_DEPTH;
-        uint64_t min_ts = UINT64_MAX;
-        for (int i = 0; i < STARK_MAX_MOTORS; i++) {
-            uint64_t ts = m_shm->mailbox.frames[last_idx].cmd[i].timestamp_us;
-            if (ts > 0 && ts < min_ts) min_ts = ts;
-        }
-        uint32_t age = 0;
-        if (min_ts != UINT64_MAX && mbox_read_us > min_ts)
-            age = (uint32_t)(mbox_read_us - min_ts);
-
-        if (age > m_mbox_age_max_run) m_mbox_age_max_run = age;
-        m_shm->mbox_age_max_us = (uint16_t)(m_mbox_age_max_run > 65535 ? 65535 : m_mbox_age_max_run);
-
-        static uint32_t s_mbox_sum = 0, s_mbox_min_win = UINT32_MAX;
-        static uint16_t s_mbox_cnt = 0;
-        s_mbox_sum += age; s_mbox_cnt++;
-        if (age < s_mbox_min_win) s_mbox_min_win = age;
-        if (s_mbox_cnt >= 1000) {
-            s_mbox_sum = 0; s_mbox_cnt = 0;
-            s_mbox_min_win = UINT32_MAX;
-        }
-        m_shm->mbox_age_avg_us = (uint16_t)(s_mbox_cnt > 0 ? s_mbox_sum / s_mbox_cnt : 0);
-        m_shm->mbox_age_min_us = (uint16_t)(s_mbox_min_win != UINT32_MAX ? s_mbox_min_win : 0);
-
-        /* 记录算法下发时刻 (供端到端 ctrl_e2e = PDO发出 - 算法下发) */
-        if (min_ts != UINT64_MAX)
-            m_tracer.mark_ctrl_origin(min_ts);
-    }
-
-    m_tracer.mark_pdo_sent();
 }
 
 /*
@@ -866,9 +850,6 @@ void StarkRtWorker::PublishFeedback()
 
     struct timespec ts;
 
-    /* T1: 开始读 fb_cache */
-    m_tracer.mark_fb_read_start();
-
     uint64_t read_rt_us = 0;
     if (m_rt.perf_trace) {
         struct timespec ts_rt;
@@ -893,9 +874,6 @@ void StarkRtWorker::PublishFeedback()
             fb->motor[idx].error_code  = mfb.error_code;
         }
     }
-
-    /* T2: fb_cache 读取完成 */
-    m_tracer.mark_fb_read_done();
 
     /* 填充传感器透传 */
     for (uint8_t id = 1; id <= (uint8_t)m_motor_count; ++id) {
@@ -935,76 +913,100 @@ void StarkRtWorker::PublishFeedback()
         fb->ts_foot_rx = fp.timestamp_us;
     }
 
-    /* IMU+传感器+气压计 组装完成 */
-    m_tracer.mark_mock_sensor_done();
-
     /* T4: SHM 切换 */
     clock_gettime(CLOCK_MONOTONIC, &ts);
     fb->ts_shm_write      = (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
     fb->ts_frame_assembly = fb->ts_shm_write;
     fb->timestamp_us      = fb->ts_shm_write;
 
-    /* 记录 CAN 收帧时刻 (供端到端 fb_e2e = SHM写完 - CAN收帧) */
-    if (m_rt.perf_trace && min_fb_ts != UINT64_MAX)
-        m_tracer.mark_fb_origin(min_fb_ts);
+    /* 记录 CAN 收帧时刻 (供 demo_algo 计算反馈 e2e = algo读时刻 - CAN收帧) */
+    if (min_fb_ts != UINT64_MAX) {
+        fb->ts_can_rx = min_fb_ts;
+    }
+
+    /* 上行分段统计: 段1 = rt读 - can0收帧 (含协议解析+排队).
+     * read_rt_us 仅在 perf_trace 时打点, 与 trace 开关一致. */
+    fb->ts_shm_read = read_rt_us;
+    if (m_trace_shm && __atomic_load_n(&m_trace_shm->enabled, __ATOMIC_ACQUIRE) &&
+        min_fb_ts != UINT64_MAX && read_rt_us >= min_fb_ts) {
+        uint64_t up_seg1 = read_rt_us - min_fb_ts;
+        if (up_seg1 < 100000) {
+            trace_stat_update(&m_trace_shm->up_seg1, up_seg1);
+        }
+    }
 
     /* 切换活跃 Buffer */
     __atomic_store_n(&m_shm->active_idx, write_idx, __ATOMIC_RELEASE);
 
-    /* T4: SHM 双 Buffer 切换完成 */
-    m_tracer.mark_shm_write_done();
-
-    /* 填充 SHM 耗时统计 (供 web/perf_test 读取, 仅 rt.perf_trace 时) */
+    /* 周期超限次数 (前端状态显示) */
     if (m_rt.perf_trace) {
-        latency_stats_t st = {};
-        m_tracer.fill_shm_stats(st);
-        m_shm->fb_read_avg_us    = (uint16_t)st.fb_read_avg;
-        m_shm->fb_read_max_us    = (uint16_t)st.fb_read_max;
-        m_shm->fb_total_avg_us   = (uint16_t)st.fb_total_avg;
-        m_shm->fb_total_max_us   = (uint16_t)st.fb_total_max;
-        m_shm->fb_total_min_us   = (uint16_t)st.fb_total_min;
-        m_shm->ctrl_total_avg_us = (uint16_t)st.ctrl_total_avg;
-        m_shm->ctrl_total_min_us = (uint16_t)st.ctrl_total_min;
-        {
-            if (st.ctrl_total_max > m_ctrl_max_run) m_ctrl_max_run = st.ctrl_total_max;
-            m_shm->ctrl_total_max_us = (uint16_t)(m_ctrl_max_run > 65535 ? 65535 : m_ctrl_max_run);
-        }
-
-        /* 反馈数据年龄 (CAN 收帧 → RT worker 读到) */
-        {
-            uint32_t fb_age = 0;
-            if (min_fb_ts != UINT64_MAX && read_rt_us > min_fb_ts)
-                fb_age = (uint32_t)(read_rt_us - min_fb_ts);
-
-            if (fb_age > m_fb_age_max_run) m_fb_age_max_run = fb_age;
-            m_shm->fb_age_max_us = (uint16_t)(m_fb_age_max_run > 65535 ? 65535 : m_fb_age_max_run);
-
-            static uint32_t s_age_sum = 0, s_age_min_win = UINT32_MAX;
-            static uint16_t s_age_cnt = 0;
-            s_age_sum += fb_age;
-            s_age_cnt++;
-            if (fb_age < s_age_min_win) s_age_min_win = fb_age;
-            if (s_age_cnt >= 1000) {
-                s_age_sum = 0;
-                s_age_cnt = 0;
-                s_age_min_win = UINT32_MAX;
-            }
-            m_shm->fb_age_avg_us = (uint16_t)(s_age_cnt > 0 ? s_age_sum / s_age_cnt : 0);
-            m_shm->fb_age_min_us = (uint16_t)(s_age_min_win != UINT32_MAX ? s_age_min_win : 0);
-        }
-
-        m_shm->trace_cycle_count = st.cycle_count;
-        m_shm->shm_write_avg_us  = (uint16_t)st.shm_write_avg;
-
-        m_shm->ctrl_e2e_avg_us = (uint16_t)st.ctrl_e2e_avg;
-        m_shm->ctrl_e2e_min_us = (uint16_t)st.ctrl_e2e_min;
-        m_shm->ctrl_e2e_max_us = st.ctrl_e2e_max;
-        m_shm->fb_e2e_avg_us   = (uint16_t)st.fb_e2e_avg;
-        m_shm->fb_e2e_min_us   = (uint16_t)st.fb_e2e_min;
-        m_shm->fb_e2e_max_us   = st.fb_e2e_max;
-
         m_shm->cycle_overrun_count = (uint32_t)(m_overrun_count & 0xFFFFFFFFULL);
     }
+}
+
+/*
+ * PublishCtrlSample() — 逐帧写一条控制样本到 ctrl ring (单写多读无锁)
+ *
+ * kind: TRACE_KIND_CTRL_SINGLE(单电机命令) / TRACE_KIND_CTRL_MULTI(多轴广播)
+ * origin_us: 算法下发时刻 (motor_command_t.timestamp_us), 0=无有效起点
+ * e2e_us = 发送完成时刻(now) - 算法下发时刻
+ *
+ * 写入顺序: 先填 ctrl_samples[head % RING], 再 release 递增 ctrl_head.
+ * 此时 m_cycle_count 尚未递增, 样本 cycle = 帧发生的当前周期 (对齐修复).
+ */
+void StarkRtWorker::PublishCtrlSample(uint16_t kind, uint16_t motor_id, uint64_t origin_us)
+{
+    if (!m_trace_shm) return;
+    if (!__atomic_load_n(&m_trace_shm->enabled, __ATOMIC_ACQUIRE)) return;
+    if (origin_us == 0) return;
+
+    uint64_t now = _rt_now_us();   /* can0 发送完成时刻 (下行段2终点) */
+    if (now < origin_us) return;
+    uint64_t e2e = now - origin_us;   /* 下行总 */
+
+    /* 下行分段统计: 段1=algo→rt读mailbox, 段2=rt读→can0发送.
+     * 校验时间戳单调性, 过滤跨周期错位导致的虚假耗时. */
+    if (m_mailbox_read_us >= origin_us && now >= m_mailbox_read_us) {
+        uint64_t seg1 = m_mailbox_read_us - origin_us;
+        uint64_t seg2 = now - m_mailbox_read_us;
+        if (seg1 < 100000 && seg2 < 100000 && e2e < 100000) {
+            trace_stat_update(&m_trace_shm->dn_seg1, seg1);
+            trace_stat_update(&m_trace_shm->dn_seg2, seg2);
+            trace_stat_update(&m_trace_shm->dn_total, e2e);
+        }
+    }
+
+    uint32_t head = __atomic_load_n(&m_trace_shm->ctrl_head, __ATOMIC_RELAXED);
+    trace_sample_t* s = &m_trace_shm->ctrl_samples[head % STARK_TRACE_CTRL_RING];
+    s->cycle    = (uint32_t)(m_cycle_count & 0xFFFFFFFF);
+    s->kind     = kind;
+    s->e2e_us   = (uint16_t)(e2e > 65535 ? 65535 : e2e);
+    s->motor_id = motor_id;
+    s->reserved = 0;
+    s->ts_us    = (uint32_t)(origin_us & 0xFFFFFFFF);
+    __atomic_store_n(&m_trace_shm->ctrl_head, head + 1, __ATOMIC_RELEASE);
+}
+
+/*
+ * PublishTrace() — 每周期写一条抖动样本到 jitter ring (单写多读无锁)
+ *
+ * jitter 是"本周期睡眠后的实际唤醒 - 理想目标", 属性上属于下一周期,
+ * 因此用已递增后的 m_cycle_count 作为周期标签.
+ */
+void StarkRtWorker::PublishTrace()
+{
+    if (!m_trace_shm) return;
+    if (!__atomic_load_n(&m_trace_shm->enabled, __ATOMIC_ACQUIRE)) return;
+
+    uint32_t head = __atomic_load_n(&m_trace_shm->jitter_head, __ATOMIC_RELAXED);
+    trace_sample_t* s = &m_trace_shm->jitter_samples[head % STARK_TRACE_JITTER_RING];
+    s->cycle    = (uint32_t)(m_cycle_count & 0xFFFFFFFF);
+    s->kind     = 0;
+    s->e2e_us   = (uint16_t)(m_cur_jitter > 65535 ? 65535 : m_cur_jitter);
+    s->motor_id = 0;
+    s->reserved = 0;
+    s->ts_us    = (uint32_t)(_rt_now_us() & 0xFFFFFFFF);
+    __atomic_store_n(&m_trace_shm->jitter_head, head + 1, __ATOMIC_RELEASE);
 }
 
 /*
@@ -1055,22 +1057,7 @@ void StarkRtWorker::SetThreadRt()
            m_rt.cpu_affinity[0], m_rt.cpu_affinity[1]);
 }
 
-/* GetAvgLatencyUs() — 诊断: 最近 64 次闭环延迟平均值 */
-
-uint32_t StarkRtWorker::GetAvgLatencyUs() const
-{
-    uint64_t sum = 0;
-    uint32_t n   = (m_latency_idx < 64) ? m_latency_idx : 64;
-    if (n == 0) return 0;
-
-    for (uint32_t i = 0; i < n; i++) {
-        sum += m_latency_history[i];
-    }
-    return (uint32_t)(sum / n);
-}
-
-/*
- * GetPendingState() — 主循环读取 RT 线程请求的状态切换
+/* GetPendingState() — 主循环读取 RT 线程请求的状态切换
  * atomic exchange: 读当前值并清零为 STATE_BOOTING
  */
 

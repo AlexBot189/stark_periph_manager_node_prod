@@ -58,22 +58,35 @@ emd_gaf_t *emd_gaf_create(void);
  */
 void emd_gaf_destroy(emd_gaf_t *handle);
 
+/* 接口类型 */
+typedef enum {
+    EMD_GAF_IF_I2C = 0,
+    EMD_GAF_IF_SPI = 1,
+} emd_gaf_if_t;
+
+/* 初始化配置 */
+typedef struct {
+    emd_gaf_if_t  if_type;       /* 接口类型 */
+    const char   *i2c_dev;       /* I2C 设备路径 (IF_I2C) */
+    const char   *spi_dev;       /* SPI 设备路径 (IF_SPI) */
+    uint32_t      spi_speed_hz;  /* SPI 时钟 Hz */
+    uint8_t       spi_mode;      /* SPI 模式 0-3 */
+    const char   *gpio_chip;     /* GPIO 芯片 */
+    unsigned int  gpio_line;     /* GPIO 中断线 */
+    int           op_mode;       /* 操作模式 0-9 */
+} emd_gaf_cfg_t;
+
 /**
  * @brief 初始化 IMU 并配置 HAL
  *
- * 打开 I2C 设备，配置 GPIO 中断线，初始化 ICM45608。
+ * 打开 I2C/SPI 设备，配置 GPIO 中断线，初始化 ICM45608。
  * 必须在 emd_gaf_start() 之前调用。
  *
- * @param handle    实例句柄
- * @param i2c_dev   I2C 设备路径，如 "/dev/i2c-3"
- * @param gpio_chip GPIO 芯片名，如 "gpiochip4"
- * @param gpio_line GPIO 中断线编号
- * @param op_mode   操作模式 0-9
+ * @param handle 实例句柄
+ * @param cfg    初始化配置
  * @return 0 成功，<0 失败
  */
-int emd_gaf_init(emd_gaf_t *handle, const char *i2c_dev,
-                 const char *gpio_chip, unsigned int gpio_line,
-                 int op_mode);
+int emd_gaf_init(emd_gaf_t *handle, const emd_gaf_cfg_t *cfg);
 
 /*
  * 采集控制

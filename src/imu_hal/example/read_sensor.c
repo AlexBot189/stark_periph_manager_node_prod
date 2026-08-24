@@ -95,7 +95,14 @@ int main(int argc, char *argv[])
     }
 
     /* 2. 初始化 */
-    int rc = emd_gaf_init(gaf, i2c_dev, gpio_chip, gpio_line, op_mode);
+    emd_gaf_cfg_t cfg = {
+        .if_type   = EMD_GAF_IF_I2C,
+        .i2c_dev   = i2c_dev,
+        .gpio_chip = gpio_chip,
+        .gpio_line = gpio_line,
+        .op_mode   = op_mode,
+    };
+    int rc = emd_gaf_init(gaf, &cfg);
     if (rc != 0) {
         fprintf(stderr, "IMU HAL init failed: rc=%d\n", rc);
         emd_gaf_destroy(gaf);

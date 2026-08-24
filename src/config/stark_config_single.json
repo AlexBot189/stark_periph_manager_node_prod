@@ -55,7 +55,12 @@
     "report": { "gpio_chip": "gpiochip4", "line": 8 }
   },
   "imu": {
+    "driver": "invensense",
+    "interface": "i2c",
     "i2c_dev": "/dev/i2c-3",
+    "spi_dev": "/dev/spidev0.0",
+    "spi_speed_hz": 8000000,
+    "spi_mode": 0,
     "gpio_chip": "gpiochip4",
     "gpio_line": 6,
     "op_mode": 5

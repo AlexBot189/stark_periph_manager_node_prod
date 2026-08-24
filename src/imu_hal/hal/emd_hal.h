@@ -19,11 +19,21 @@
 extern "C" {
 #endif
 
-/* 板级初始化 */
+/* 接口类型 */
+typedef enum {
+    EMD_HAL_IF_I2C = 0,
+    EMD_HAL_IF_SPI = 1,
+} emd_hal_if_t;
+
+/* 板级初始化 (I2C) */
 int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
                  const char *gpio_chip, unsigned int gpio_line);
 
-/* IMU I2C 读写 */
+/* 板级初始化 (SPI) */
+int emd_hal_init_spi(const char *spi_dev, uint32_t speed_hz, uint8_t mode,
+                     const char *gpio_chip, unsigned int gpio_line);
+
+/* IMU 寄存器读写 (按接口类型分发) */
 int emd_hal_read_reg(uint8_t reg, uint8_t *buf, uint32_t len);
 int emd_hal_write_reg(uint8_t reg, const uint8_t *buf, uint32_t len);
 

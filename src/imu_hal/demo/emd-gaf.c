@@ -86,7 +86,14 @@ int main(int argc, char *argv[])
     }
 
     /* 2. 初始化 */
-    if (emd_gaf_init(gaf, i2c_dev, gpio_chip, gpio_line, op_mode) != 0) {
+    emd_gaf_cfg_t cfg = {
+        .if_type   = EMD_GAF_IF_I2C,
+        .i2c_dev   = i2c_dev,
+        .gpio_chip = gpio_chip,
+        .gpio_line = gpio_line,
+        .op_mode   = op_mode,
+    };
+    if (emd_gaf_init(gaf, &cfg) != 0) {
         fprintf(stderr, "[E] emd_gaf_init() failed\n");
         emd_gaf_destroy(gaf);
         return 1;

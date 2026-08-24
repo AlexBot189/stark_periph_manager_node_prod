@@ -51,8 +51,6 @@
  */
 #define EMD_IMU_AXIS_REMAP_2 1
 
-#define SERIF_TYPE UI_I2C
-
 #define ACCEL_FSR_ENUM (ACCEL_CONFIG0_ACCEL_UI_FS_SEL_4_G)
 #define ACCEL_FSR_G    (4)
 #define RAW_ACC_SCALE  (ACCEL_FSR_G * 2)
@@ -74,6 +72,7 @@
 #define MASK_NOTIFY_RAW_GYR_DATA 0x02
 
 #define DEFAULT_I2C_DEV   "/dev/i2c-3"
+#define DEFAULT_SPI_DEV   "/dev/spidev0.0"
 #define DEFAULT_GPIO_CHIP "gpiochip4"
 #define DEFAULT_GPIO_LINE 2
 #define DEFAULT_IMU_ADDR  0x68
@@ -167,6 +166,10 @@ static const op_mode_t supported_cfg[] = {
 struct emd_gaf {
     /* 初始化参数 */
     char     i2c_dev[64];
+    char     spi_dev[64];
+    uint32_t spi_speed_hz;
+    uint8_t  spi_mode;
+    uint8_t  if_type;
     char     gpio_chip[64];
     unsigned int gpio_line;
     uint8_t  imu_addr;
@@ -329,6 +332,10 @@ emd_gaf_t *emd_gaf_create(void)
 
     /* 默认值 */
     strncpy(g->i2c_dev, DEFAULT_I2C_DEV, sizeof(g->i2c_dev) - 1);
+    strncpy(g->spi_dev, DEFAULT_SPI_DEV, sizeof(g->spi_dev) - 1);
+    g->spi_speed_hz = 8000000;
+    g->spi_mode     = 0;
+    g->if_type      = EMD_GAF_IF_I2C;
     strncpy(g->gpio_chip, DEFAULT_GPIO_CHIP, sizeof(g->gpio_chip) - 1);
     g->gpio_line = DEFAULT_GPIO_LINE;
     g->imu_addr  = DEFAULT_IMU_ADDR;
@@ -367,20 +374,26 @@ void emd_gaf_destroy(emd_gaf_t *handle)
     free(handle);
 }
 
-int emd_gaf_init(emd_gaf_t *handle, const char *i2c_dev,
-                 const char *gpio_chip, unsigned int gpio_line,
-                 int op_mode)
+int emd_gaf_init(emd_gaf_t *handle, const emd_gaf_cfg_t *cfg)
 {
     if (!handle) return -1;
-    if (op_mode < 0 || (size_t)op_mode >= NUM_OP_MODES) return -1;
+    if (!cfg) return -1;
+    if (cfg->op_mode < 0 || (size_t)cfg->op_mode >= NUM_OP_MODES) return -1;
 
     int rc = 0;
 
     /* 保存参数 */
-    strncpy(handle->i2c_dev, i2c_dev, sizeof(handle->i2c_dev) - 1);
-    strncpy(handle->gpio_chip, gpio_chip, sizeof(handle->gpio_chip) - 1);
-    handle->gpio_line   = gpio_line;
-    handle->op_mode_idx = (uint8_t)op_mode;
+    handle->if_type = (uint8_t)cfg->if_type;
+    if (cfg->i2c_dev)
+        strncpy(handle->i2c_dev, cfg->i2c_dev, sizeof(handle->i2c_dev) - 1);
+    if (cfg->spi_dev)
+        strncpy(handle->spi_dev, cfg->spi_dev, sizeof(handle->spi_dev) - 1);
+    handle->spi_speed_hz = cfg->spi_speed_hz;
+    handle->spi_mode     = cfg->spi_mode;
+    if (cfg->gpio_chip)
+        strncpy(handle->gpio_chip, cfg->gpio_chip, sizeof(handle->gpio_chip) - 1);
+    handle->gpio_line   = cfg->gpio_line;
+    handle->op_mode_idx = (uint8_t)cfg->op_mode;
 
     /* 重置状态 */
     handle->accel_en = 0;
@@ -406,9 +419,14 @@ int emd_gaf_init(emd_gaf_t *handle, const char *i2c_dev,
     handle->edmp_outputs.mag_accuracy_flag = handle->mag_accuracy;
     SI_CHECK_RC(rc);
 
-    /* 1. Init HAL */
-    rc |= emd_hal_init(handle->i2c_dev, handle->imu_addr,
-                       handle->gpio_chip, handle->gpio_line);
+    /* 1. Init HAL (按接口类型) */
+    if (handle->if_type == EMD_GAF_IF_SPI) {
+        rc |= emd_hal_init_spi(handle->spi_dev, handle->spi_speed_hz,
+                               handle->spi_mode, handle->gpio_chip, handle->gpio_line);
+    } else {
+        rc |= emd_hal_init(handle->i2c_dev, handle->imu_addr,
+                           handle->gpio_chip, handle->gpio_line);
+    }
     SI_CHECK_RC(rc);
 
     /* 2. 配置 GPIO 中断回调 */
@@ -587,7 +605,8 @@ static int _setup_imu(emd_gaf_t *g)
     /* 传输层 */
     g->imu_dev.transport.read_reg   = si_io_imu_read_reg;
     g->imu_dev.transport.write_reg  = si_io_imu_write_reg;
-    g->imu_dev.transport.serif_type = SERIF_TYPE;
+    g->imu_dev.transport.serif_type =
+        (g->if_type == EMD_GAF_IF_SPI) ? UI_SPI4 : UI_I2C;
     g->imu_dev.transport.sleep_us   = si_sleep_us;
 
     /* 传感器事件回调 */

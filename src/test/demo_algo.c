@@ -67,6 +67,9 @@
 
 static volatile int g_running = 1;
 
+/* 独立 trace SHM 句柄 (上行反馈打点, 失败不阻塞) */
+static stark_trace_t g_trace;
+
 static void sig_handler(int sig)
 {
     (void)sig;
@@ -140,6 +143,7 @@ static void run_torque(stark_client_t* c, int32_t amplitude_ma)
         }
 
         stark_heartbeat(c);
+        stark_trace_fb_update(c, &g_trace);
         usleep(1000);
     }
 }
@@ -175,6 +179,7 @@ static void run_speed(stark_client_t* c, float max_rpm)
                    (unsigned long)(t / 1000), rpm, fb.velocity, counts_to_deg(fb.position));
         }
         stark_heartbeat(c);
+        stark_trace_fb_update(c, &g_trace);
         usleep(5000);
     }
 }
@@ -202,6 +207,7 @@ static void run_position(stark_client_t* c, float amplitude_deg)
                    counts_to_deg(fb.position), fb.current_iq);
         }
         stark_heartbeat(c);
+        stark_trace_fb_update(c, &g_trace);
         usleep(1000);
     }
 }
@@ -226,6 +232,7 @@ static void run_mit(stark_client_t* c, float kp, float kd,
                    counts_to_deg(fb2.position), fb2.current_iq);
         }
         stark_heartbeat(c);
+        stark_trace_fb_update(c, &g_trace);
         usleep(1000);
     }
 }
@@ -249,6 +256,7 @@ static void run_pp(stark_client_t* c, float amplitude_deg, float accel, float ve
                    (unsigned long)(t / 1000), target, counts_to_deg(fb.position));
         }
         stark_heartbeat(c);
+        stark_trace_fb_update(c, &g_trace);
         usleep(1000);
     }
 }
@@ -282,6 +290,7 @@ static void run_pv(stark_client_t* c, float max_rpm, float accel)
                    (unsigned long)(t / 1000), rpm, fb.velocity);
         }
         stark_heartbeat(c);
+        stark_trace_fb_update(c, &g_trace);
         usleep(5000);
     }
 }
@@ -346,6 +355,7 @@ static void run_multi_ctrl(stark_client_t* c, int mode, float v1, float v2)
             last_t1 = t1; last_t2 = t2;
         }
         stark_heartbeat(c);
+        stark_trace_fb_update(c, &g_trace);
         usleep(1000);
     }
 }
@@ -379,6 +389,7 @@ static void run_torque_ctrl(stark_client_t* c, int32_t val)
         }
 
         if (++cnt % 200 == 0) stark_heartbeat(c);
+        stark_trace_fb_update(c, &g_trace);
         usleep(1000);
     }
 }
@@ -413,6 +424,7 @@ static void run_mit_multi(stark_client_t* c, float kp, float kd,
 
         static int cnt = 0;
         if (++cnt % 200 == 0) stark_heartbeat(c);
+        stark_trace_fb_update(c, &g_trace);
         usleep(1000);
     }
 }
@@ -691,6 +703,9 @@ int main(int argc, char** argv)
         usleep(100000);
     }
     printf("[init] SHM 已连接\n");
+
+    /* 打开独立 trace SHM (上行耗时跟踪, 失败不阻塞控制) */
+    stark_trace_open(&g_trace);
 
     /* stat/report/btn/led/mgmt 模式不需要校准, 等电机在线即可 */
     int need_calib = (strcmp(mode, "torque") == 0 || strcmp(mode, "speed") == 0 ||
@@ -1225,6 +1240,7 @@ int main(int argc, char** argv)
     if (stark_online(&c, 1)) stark_estop(&c, 1);
     if (stark_online(&c, 2)) stark_estop(&c, 2);
     usleep(10000);
+    stark_trace_close(&g_trace);
     stark_close(&c);
     return 0;
 }

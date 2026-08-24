@@ -1,0 +1,20 @@
+{
+    "module": "stark_periph_manager_node",
+    "date": "2026-08-07",
+    "time": "18:48:09",
+    "author": "unknown",
+    "project": "rk3576",
+    "commit": "unknown",
+    "type": "manual",
+    "test_info": {
+        "passed": 1,
+        "failed": 0,
+        "case_info": [
+            {
+                "name": "stark_periph_manager_node test",
+                "result": "passed",
+                "details": {}
+            }
+        ]
+    }
+}

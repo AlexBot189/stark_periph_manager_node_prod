@@ -25,12 +25,23 @@
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 
+/* Linux SPI dev */
+#include <linux/spi/spidev.h>
+
 /* libgpiod */
 #include <gpiod.h>
 
 /* 内部状态 */
 static int              g_i2c_fd       = -1;
 static uint8_t          g_imu_addr     = 0x68;
+
+/* SPI 状态 */
+static int              g_spi_fd       = -1;
+static uint32_t         g_spi_speed_hz = 8000000;
+static uint8_t          g_spi_mode     = 0;
+
+/* 当前接口类型 */
+static int              g_if_type      = EMD_HAL_IF_I2C;
 
 static struct gpiod_chip      *g_gpio_chip   = NULL;
 static struct gpiod_line      *g_gpio_line   = NULL;
@@ -47,7 +58,7 @@ static const char      *g_bias_file    = "./imu_bias.bin";
  * I2C 操作
  */
 
-int emd_hal_read_reg(uint8_t reg, uint8_t *buf, uint32_t len)
+static int emd_hal_i2c_read_reg(uint8_t reg, uint8_t *buf, uint32_t len)
 {
     struct i2c_msg msgs[2];
     struct i2c_rdwr_ioctl_data ioctl_data;
@@ -73,7 +84,7 @@ int emd_hal_read_reg(uint8_t reg, uint8_t *buf, uint32_t len)
     return 0;
 }
 
-int emd_hal_write_reg(uint8_t reg, const uint8_t *buf, uint32_t len)
+static int emd_hal_i2c_write_reg(uint8_t reg, const uint8_t *buf, uint32_t len)
 {
     struct i2c_msg msgs[1];
     struct i2c_rdwr_ioctl_data ioctl_data;
@@ -97,6 +108,89 @@ int emd_hal_write_reg(uint8_t reg, const uint8_t *buf, uint32_t len)
         return -1;
     }
     return 0;
+}
+
+/*
+ * SPI 操作
+ *
+ * ICM45608 SPI 帧: 首字节 bit7=读/写(1=读 0=写), bit6:0=寄存器地址.
+ * 读: 先发命令字节, 再在同一 CS 周期内读回 len 字节 (地址自动递增).
+ */
+
+static int emd_hal_spi_read_reg(uint8_t reg, uint8_t *buf, uint32_t len)
+{
+    if (g_spi_fd < 0)
+        return -1;
+
+    uint8_t cmd = reg | 0x80;
+
+    struct spi_ioc_transfer tr[2] = {
+        {
+            .tx_buf        = (unsigned long)&cmd,
+            .rx_buf        = 0,
+            .len           = 1,
+            .speed_hz      = g_spi_speed_hz,
+            .bits_per_word = 8,
+        },
+        {
+            .tx_buf        = 0,
+            .rx_buf        = (unsigned long)buf,
+            .len           = len,
+            .speed_hz      = g_spi_speed_hz,
+            .bits_per_word = 8,
+        },
+    };
+
+    if (ioctl(g_spi_fd, SPI_IOC_MESSAGE(2), tr) < 0) {
+        fprintf(stderr, "EMD_HAL: SPI read reg=0x%02x len=%u failed: %s\n",
+                reg, len, strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+static int emd_hal_spi_write_reg(uint8_t reg, const uint8_t *buf, uint32_t len)
+{
+    if (g_spi_fd < 0)
+        return -1;
+
+    uint8_t tx[1 + len];
+    tx[0] = reg & 0x7F;
+    if (len > 0 && buf)
+        memcpy(&tx[1], buf, len);
+
+    struct spi_ioc_transfer tr = {
+        .tx_buf        = (unsigned long)tx,
+        .rx_buf        = 0,
+        .len           = 1 + len,
+        .speed_hz      = g_spi_speed_hz,
+        .bits_per_word = 8,
+    };
+
+    if (ioctl(g_spi_fd, SPI_IOC_MESSAGE(1), &tr) < 0) {
+        fprintf(stderr, "EMD_HAL: SPI write reg=0x%02x len=%u failed: %s\n",
+                reg, len, strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+/*
+ * 寄存器读写 (按当前接口类型分发)
+ */
+
+int emd_hal_read_reg(uint8_t reg, uint8_t *buf, uint32_t len)
+{
+    if (g_if_type == EMD_HAL_IF_SPI)
+        return emd_hal_spi_read_reg(reg, buf, len);
+    return emd_hal_i2c_read_reg(reg, buf, len);
+}
+
+int emd_hal_write_reg(uint8_t reg, const uint8_t *buf, uint32_t len)
+{
+    if (g_if_type == EMD_HAL_IF_SPI)
+        return emd_hal_spi_write_reg(reg, buf, len);
+    return emd_hal_i2c_write_reg(reg, buf, len);
 }
 
 /*
@@ -192,23 +286,8 @@ int emd_hal_storage_write(const uint8_t *data, uint32_t size)
  * 初始化 / 反初始化
  */
 
-int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
-                 const char *gpio_chip, unsigned int gpio_line)
+static int _gpio_init(const char *gpio_chip, unsigned int gpio_line)
 {
-    if (g_initialized)
-        return 0;
-
-    /* I2C */
-    g_i2c_fd = open(i2c_dev, O_RDWR);
-    if (g_i2c_fd < 0) {
-        fprintf(stderr, "EMD_HAL: open %s failed: %s\n",
-                i2c_dev, strerror(errno));
-        return -1;
-    }
-    g_imu_addr = imu_addr;
-    printf("EMD_HAL: I2C %s ready (addr=0x%02x)\n", i2c_dev, imu_addr);
-
-    /* GPIO */
     /* 接受 "gpiochip4" 或 "/dev/gpiochip4" 两种格式 */
     char path[64];
     if (gpio_chip[0] == '/')
@@ -220,7 +299,6 @@ int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
     if (!g_gpio_chip) {
         fprintf(stderr, "EMD_HAL: gpiod_chip_open(%s) failed: %s\n",
                 path, strerror(errno));
-        close(g_i2c_fd);
         return -1;
     }
 
@@ -228,7 +306,7 @@ int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
     if (!g_gpio_line) {
         fprintf(stderr, "EMD_HAL: gpiod get line %u failed\n", gpio_line);
         gpiod_chip_close(g_gpio_chip);
-        close(g_i2c_fd);
+        g_gpio_chip = NULL;
         return -1;
     }
 
@@ -239,11 +317,75 @@ int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
         fprintf(stderr, "EMD_HAL: gpiod request event failed: %s\n",
                 strerror(errno));
         gpiod_chip_close(g_gpio_chip);
-        close(g_i2c_fd);
+        g_gpio_chip = NULL;
         return -1;
     }
     printf("EMD_HAL: GPIO %s line %u ready\n", path, gpio_line);
+    return 0;
+}
 
+int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
+                 const char *gpio_chip, unsigned int gpio_line)
+{
+    if (g_initialized)
+        return 0;
+
+    g_i2c_fd = open(i2c_dev, O_RDWR);
+    if (g_i2c_fd < 0) {
+        fprintf(stderr, "EMD_HAL: open %s failed: %s\n",
+                i2c_dev, strerror(errno));
+        return -1;
+    }
+    g_imu_addr = imu_addr;
+    printf("EMD_HAL: I2C %s ready (addr=0x%02x)\n", i2c_dev, imu_addr);
+
+    if (_gpio_init(gpio_chip, gpio_line) != 0) {
+        close(g_i2c_fd);
+        g_i2c_fd = -1;
+        return -1;
+    }
+
+    g_if_type = EMD_HAL_IF_I2C;
+    g_initialized = 1;
+    return 0;
+}
+
+int emd_hal_init_spi(const char *spi_dev, uint32_t speed_hz, uint8_t mode,
+                     const char *gpio_chip, unsigned int gpio_line)
+{
+    if (g_initialized)
+        return 0;
+
+    g_spi_fd = open(spi_dev, O_RDWR);
+    if (g_spi_fd < 0) {
+        fprintf(stderr, "EMD_HAL: open %s failed: %s\n",
+                spi_dev, strerror(errno));
+        return -1;
+    }
+
+    uint8_t  bits = 8;
+    uint8_t  m    = mode & 0x03;
+    uint32_t spd  = speed_hz;
+    if (ioctl(g_spi_fd, SPI_IOC_WR_MODE, &m) < 0 ||
+        ioctl(g_spi_fd, SPI_IOC_WR_BITS_PER_WORD, &bits) < 0 ||
+        ioctl(g_spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &spd) < 0) {
+        fprintf(stderr, "EMD_HAL: SPI config %s failed: %s\n",
+                spi_dev, strerror(errno));
+        close(g_spi_fd);
+        g_spi_fd = -1;
+        return -1;
+    }
+    g_spi_speed_hz = spd;
+    g_spi_mode     = m;
+    printf("EMD_HAL: SPI %s ready (mode=%u speed=%uHz)\n", spi_dev, m, spd);
+
+    if (_gpio_init(gpio_chip, gpio_line) != 0) {
+        close(g_spi_fd);
+        g_spi_fd = -1;
+        return -1;
+    }
+
+    g_if_type = EMD_HAL_IF_SPI;
     g_initialized = 1;
     return 0;
 }
@@ -262,5 +404,10 @@ void emd_hal_deinit(void)
         close(g_i2c_fd);
         g_i2c_fd = -1;
     }
+    if (g_spi_fd >= 0) {
+        close(g_spi_fd);
+        g_spi_fd = -1;
+    }
+    g_if_type = EMD_HAL_IF_I2C;
     g_initialized = 0;
 }

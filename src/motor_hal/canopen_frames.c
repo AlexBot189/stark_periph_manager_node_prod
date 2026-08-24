@@ -340,7 +340,8 @@ void canopen_multi_ctrl_build(const multi_axis_cmd_t *cmds, uint8_t count,
 void canopen_parse_feedback(const canfd_frame_t *f, motor_feedback_t *fb)
 {
     memset(fb, 0, sizeof(*fb));
-    fb->timestamp_us = _now_us();
+    /* 优先用 can_driver_recv 的 read 打点 (can0 读帧时刻), 否则回退到解析时刻 */
+    fb->timestamp_us = (f && f->rx_timestamp_us) ? f->rx_timestamp_us : _now_us();
 
     if (!f || f->dlc < 12) return;
 

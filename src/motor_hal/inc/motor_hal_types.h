@@ -53,6 +53,7 @@ typedef struct {
     uint8_t  data[CANFD_MAX_DLC];    /* 数据 */
     bool     is_fd;                  /* FD 帧标志 */
     bool     use_brs;                /* 数据段切换高速率 (CANFD BRS), SDO=false, PDO=true */
+    uint64_t rx_timestamp_us;        /* 接收时间戳: read() 返回时刻 (can_driver_recv 打点), 发送帧为 0 */
 } canfd_frame_t;
 
 /* ============================================================================

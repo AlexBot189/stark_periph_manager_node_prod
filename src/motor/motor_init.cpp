@@ -90,11 +90,14 @@ bool CanDispatcher::InitDispatcher()
     /* 6. 创建 StarkMotorCtrl 封装 */
     m_ctrl = std::make_unique<StarkMotorCtrl>(m_hal);
 
-    /* 7. 初始化 IMU HAL (配置已在 LoadMotorConfig 中从 config.json 读取) */
-    m_imu_sensor = std::make_unique<ImuHALSensor>();
-    if (!m_imu_sensor->Init(m_imu_i2c_dev.c_str(), m_imu_gpio_chip.c_str(),
-                            m_imu_gpio_line, m_imu_op_mode)) {
-        ECO_WARN_NEW("[CanDispatcher] IMU HAL init failed, running without IMU");
+    /* 7. 初始化 IMU (driver 决定具体实现, 配置已在 LoadMotorConfig 中读取) */
+    if (m_imu_cfg.driver == "bosch") {
+        ECO_WARN_NEW("[CanDispatcher] IMU driver 'bosch' not implemented, running without IMU");
+    } else {
+        m_imu_sensor = std::make_unique<ImuHALSensor>();
+        if (!m_imu_sensor->Init(m_imu_cfg)) {
+            ECO_WARN_NEW("[CanDispatcher] IMU init failed, running without IMU");
+        }
     }
 
     /* 7.5 初始化足底压力传感器 */
@@ -398,10 +401,15 @@ bool CanDispatcher::LoadMotorConfig()
         /* 解析 imu */
         if (cfg.contains("imu")) {
             auto& imu_cfg = cfg["imu"];
-            m_imu_i2c_dev   = imu_cfg.value("i2c_dev",   std::string("/dev/i2c-3"));
-            m_imu_gpio_chip = imu_cfg.value("gpio_chip", std::string("gpiochip4"));
-            m_imu_gpio_line = imu_cfg.value("gpio_line", 6u);
-            m_imu_op_mode   = imu_cfg.value("op_mode",   5);
+            m_imu_cfg.driver       = imu_cfg.value("driver",    std::string("invensense"));
+            m_imu_cfg.interface    = imu_cfg.value("interface", std::string("i2c"));
+            m_imu_cfg.i2c_dev      = imu_cfg.value("i2c_dev",   std::string("/dev/i2c-3"));
+            m_imu_cfg.spi_dev      = imu_cfg.value("spi_dev",   std::string("/dev/spidev0.0"));
+            m_imu_cfg.spi_speed_hz = imu_cfg.value("spi_speed_hz", 8000000u);
+            m_imu_cfg.spi_mode     = imu_cfg.value("spi_mode",  0u);
+            m_imu_cfg.gpio_chip    = imu_cfg.value("gpio_chip", std::string("gpiochip4"));
+            m_imu_cfg.gpio_line    = imu_cfg.value("gpio_line", 6u);
+            m_imu_cfg.op_mode      = imu_cfg.value("op_mode",   5);
         }
 
         /* 解析 foot_pressure */

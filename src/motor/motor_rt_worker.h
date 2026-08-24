@@ -18,8 +18,6 @@
 #include <thread>
 #include <cstdint>
 
-#include "utils/latency_trace.h"
-
 extern "C" {
 #include "motor_hal.h"
 #include "stark_shm.h"
@@ -28,7 +26,7 @@ extern "C" {
 namespace stark_periph_manager_node {
 
 class StarkMotorCtrl;
-class ImuHALSensor;
+class IImuSource;
 class FootPressureSensor;
 
 struct SafetyConfig {
@@ -55,7 +53,7 @@ struct RtConfig {
 class StarkRtWorker {
 public:
     StarkRtWorker(motor_hal_t* hal, stark_shm_t* shm,
-                StarkMotorCtrl* ctrl, ImuHALSensor* imu_sensor,
+                StarkMotorCtrl* ctrl, IImuSource* imu_sensor,
                 FootPressureSensor* foot_sensor,
                 int motor_count);
     ~StarkRtWorker();
@@ -70,13 +68,9 @@ public:
     /* 诊断 */
     uint64_t GetCycleCount()  const { return m_cycle_count; }
     uint64_t GetOverrunCount() const { return m_overrun_count; }
-    uint32_t GetAvgLatencyUs() const;
 
     /** @brief 获取 RT 线程请求的状态切换 (主循环读取后清零, atomic exchange) */
     stark_state_t GetPendingState();
-
-    /** @brief 获取延迟追踪器 (外部填充 SHM stats) */
-    StarkLatencyTracer* GetTracer() { return &m_tracer; }
 
     /** @brief 激活/去激活 RT 工作线程 (校准完成后由 main.cpp 设 true) */
     void SetActive(bool active) { m_active.store(active, std::memory_order_release); }
@@ -88,17 +82,23 @@ public:
     /** @brief 设置 report 数据来源 (启动前调用, 运行中不变) */
     enum DataSource { DS_MIXED = 0, DS_UNIFIED_6C0 = 1 };
     void SetDataSource(const std::string& src);
+
+    /** @brief 设置逐帧监控 SHM (启动前调用, 由 main 打开后注入) */
+    void SetTraceShm(stark_trace_shm_t* p) { m_trace_shm = p; }
+
     void Run();
     void ProcessMgmt();
     void ProcessMailbox();
     void PublishFeedback();
+    void PublishCtrlSample(uint16_t kind, uint16_t motor_id, uint64_t origin_us); /* 逐帧写控制样本到 ctrl ring */
+    void PublishTrace();   /* 每周期写抖动样本到 jitter ring */
 
     void SetThreadRt();
 
     motor_hal_t*        m_hal;
     stark_shm_t*          m_shm;
     StarkMotorCtrl*       m_ctrl;
-    ImuHALSensor*       m_imu_sensor;
+    IImuSource*         m_imu_sensor;
     FootPressureSensor* m_foot_sensor = nullptr;
 
     std::atomic<bool> m_running{false};
@@ -106,11 +106,6 @@ public:
 
     SafetyConfig m_safety;
     RtConfig     m_rt;
-
-    /* 延迟追踪 */
-    uint64_t m_can_last_frame_us;
-    uint64_t m_latency_history[64];     /* 最近64次闭环延迟 (T8-T0) */
-    uint32_t m_latency_idx;
 
     /* 周期控制 */
     int        m_report_divider;
@@ -126,11 +121,6 @@ public:
     uint32_t m_jitter_max_us;
     uint64_t m_jitter_acc_us;
     uint32_t m_jitter_cnt;
-
-    /* 本轮累计 max (只增不减, 由 perf_reset_request 清零) */
-    uint32_t m_fb_age_max_run = 0;    /* CAN收帧→RT读 的本轮最大年龄 */
-    uint32_t m_mbox_age_max_run = 0;  /* 算法写mailbox→RT读 的本轮最大年龄 */
-    uint32_t m_ctrl_max_run = 0;      /* 指令下发(T5→T6) 的本轮最大耗时 */
 
     /* 电机数量 (从 config.json 读取, ≤ STARK_MAX_MOTORS) */
     int      m_motor_count;
@@ -154,8 +144,10 @@ public:
     motor_mode_t m_last_pdo_mode[STARK_MAX_MOTORS];
     bool         m_pending_retry[STARK_MAX_MOTORS];  /* 异步补发标记 */
 
-    /* 延迟追踪 (STARK_LATENCY_TRACE=0 时零开销) */
-    StarkLatencyTracer m_tracer;
+    /* 逐帧监控 SHM (独立于主 SHM, main 打开后注入) */
+    stark_trace_shm_t* m_trace_shm = nullptr;
+    uint32_t m_cur_jitter = 0;   /* 本周期的周期抖动 */
+    uint64_t m_mailbox_read_us = 0;  /* 最近一次读 mailbox 的时刻 (下行段1终点/段2起点) */
 };
 
 }  /* namespace stark_periph_manager_node */

@@ -41,8 +41,7 @@ void ImuHALSensor::_RawDataCb(const emd_raw_sensor_t *data, void *user_data)
     pthread_mutex_unlock(&self->m_raw_mutex);
 }
 
-bool ImuHALSensor::Init(const char* i2c_dev, const char* gpio_chip,
-                         unsigned int gpio_line, int op_mode)
+bool ImuHALSensor::Init(const ImuConfig& cfg)
 {
     if (m_handle) {
         return true; /* 已初始化 */
@@ -55,11 +54,25 @@ bool ImuHALSensor::Init(const char* i2c_dev, const char* gpio_chip,
         return false;
     }
 
-    /* 2. 初始化 (打开 I2C, 配置 GPIO, 载入 eDMP) */
-    int ret = emd_gaf_init(m_handle, i2c_dev, gpio_chip, gpio_line, op_mode);
+    /* 2. 初始化 (打开 I2C/SPI, 配置 GPIO, 载入 eDMP) */
+    emd_gaf_cfg_t gaf_cfg;
+    memset(&gaf_cfg, 0, sizeof(gaf_cfg));
+    gaf_cfg.if_type      = (cfg.interface == "spi") ? EMD_GAF_IF_SPI : EMD_GAF_IF_I2C;
+    gaf_cfg.i2c_dev      = cfg.i2c_dev.c_str();
+    gaf_cfg.spi_dev      = cfg.spi_dev.c_str();
+    gaf_cfg.spi_speed_hz = cfg.spi_speed_hz;
+    gaf_cfg.spi_mode     = cfg.spi_mode;
+    gaf_cfg.gpio_chip    = cfg.gpio_chip.c_str();
+    gaf_cfg.gpio_line    = cfg.gpio_line;
+    gaf_cfg.op_mode      = cfg.op_mode;
+
+    const char* dev_name = (gaf_cfg.if_type == EMD_GAF_IF_SPI)
+                         ? cfg.spi_dev.c_str() : cfg.i2c_dev.c_str();
+
+    int ret = emd_gaf_init(m_handle, &gaf_cfg);
     if (ret != 0) {
         fprintf(stderr, "[ImuHALSensor] emd_gaf_init(%s, %s:%u, mode=%d) failed: %d\n",
-                i2c_dev, gpio_chip, gpio_line, op_mode, ret);
+                dev_name, cfg.gpio_chip.c_str(), cfg.gpio_line, cfg.op_mode, ret);
         emd_gaf_destroy((emd_gaf_t*)m_handle);
         m_handle = nullptr;
         return false;
@@ -78,7 +91,7 @@ bool ImuHALSensor::Init(const char* i2c_dev, const char* gpio_chip,
     emd_gaf_set_raw_data_callback((emd_gaf_t*)m_handle, _RawDataCb, this);
 
     printf("[ImuHALSensor] initialized: %s %s:%u mode=%d\n",
-           i2c_dev, gpio_chip, gpio_line, op_mode);
+           dev_name, cfg.gpio_chip.c_str(), cfg.gpio_line, cfg.op_mode);
     return true;
 }
 

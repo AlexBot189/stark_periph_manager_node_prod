@@ -326,27 +326,7 @@ typedef struct {
     uint8_t   calib_requested;            /* 算法写: 1=请求复杂校准 (按键/命令触发)        */
     uint8_t   _pad_state[1];              /* 对齐                                         */
 
-    /* 耗时追踪 (μs) */
-    /* 反馈路径 */
-    uint16_t  fb_read_avg_us;
-    uint16_t  fb_read_max_us;
-    uint16_t  fb_total_avg_us;       /* T1, T4 反馈总延迟 */
-    uint16_t  fb_total_max_us;
-    uint16_t  fb_total_min_us;
-    uint16_t  fb_age_max_us;        /* 反馈数据年龄 (CAN收帧→RT读) */
-    uint16_t  fb_age_avg_us;
-    uint16_t  fb_age_min_us;
-    /* 控制路径 */
-    uint16_t  ctrl_total_avg_us;     /* T5, T6 控制总延迟 */
-    uint16_t  ctrl_total_max_us;
-    uint16_t  ctrl_total_min_us;
-    /* 命令通道 */
-    uint16_t  mbox_age_max_us;       /* 算法写 mailbox → RT 读到 */
-    uint16_t  mbox_age_avg_us;
-    uint16_t  mbox_age_min_us;
-    /* 统计 */
-    uint32_t  trace_cycle_count;     /* 已采样周期数 */
-    uint32_t  shm_write_avg_us;      /* SHM 写入耗时 */
+    /* 周期超限统计 (前端显示超限次数) */
     uint32_t  cycle_overrun_count;   /* 周期超限次数 (uint32_t: 长期压测不回绕) */
 
     /* 周期上报区 (motor_node 写, 算法/Web 读) */
@@ -386,20 +366,100 @@ typedef struct {
     volatile uint8_t  btn_report_state;            /* 0=松开 1=按下 */
     volatile uint32_t btn_report_seq;              /* 每次按下递增, 算法比对检测边沿 */
 
-    /* 端到端耗时 (μs) */
-    uint16_t  ctrl_e2e_avg_us;       /* 算法下发 → PDO 发出 */
-    uint16_t  ctrl_e2e_min_us;
-    uint32_t  ctrl_e2e_max_us;       /* 非RT下可能超65535, 用32位 */
-    uint16_t  fb_e2e_avg_us;         /* CAN收帧 → SHM写完 */
-    uint16_t  fb_e2e_min_us;
-    uint32_t  fb_e2e_max_us;         /* 非RT下可能超65535, 用32位 */
-    /* RT 周期抖动 (μs) */
-    uint16_t  cycle_jitter_avg_us;   /* 实际唤醒 - 理想目标 */
-    uint16_t  cycle_jitter_min_us;
+    /* RT 周期抖动 max (μs) — 保留: 前端实时性等级评估 */
     uint32_t  cycle_jitter_max_us;   /* 非RT下可能超65535, 用32位 */
 
-    uint8_t   _pad[3015];
+    uint8_t   _pad[3071];
 } stark_shm_t;
+
+/* ================================================================
+ * 逐帧实时监控 SHM — 独立于主 SHM
+ *
+ * 记录两类端到端延迟 (每帧一条样本, 逐帧上曲线, 不再聚合 min/avg/max):
+ *   控制帧 e2e: demo_algo 下发 → 组包发送给 can0 设备 (RT 线程写)
+ *   反馈帧 e2e: can0 读 CANFD 帧 → 取 SHM 数据经 webserver 广播 (WebServer 写)
+ * 另保留 RT 周期抖动 (RT 线程写).
+ *
+ * 并发: 三条 ring 各自单写多读, 无锁.
+ *   写者用 __atomic_store(head+1, RELEASE) 提交, 读者 acquire 后读完整样本.
+ * ================================================================ */
+
+#define STARK_TRACE_SHM_NAME      "/stark_trace_shm"
+#define STARK_TRACE_SHM_SIZE      (128 * 1024)
+#define STARK_TRACE_MAGIC         0x53545243U     /* "STRC" */
+
+#define STARK_TRACE_CTRL_RING     2048    /* 控制帧 e2e 历史 */
+#define STARK_TRACE_FB_RING       1024    /* 反馈帧 e2e 历史 */
+#define STARK_TRACE_JITTER_RING   4096    /* 抖动历史 (~4s @1kHz) */
+
+/* 帧类型 */
+#define TRACE_KIND_CTRL_SINGLE    1       /* 单帧控制: 单电机命令 → can0 */
+#define TRACE_KIND_CTRL_MULTI     2       /* 多帧控制: 0x200/0x210 多轴广播 → can0 */
+#define TRACE_KIND_FB             3       /* 反馈帧: can0 收帧 → demo_algo 读到 */
+
+/* 每帧样本: 16 字节 */
+typedef struct {
+    uint32_t cycle;        /* 帧发生时的 RT 周期号, 1ms/tick */
+    uint16_t kind;         /* 帧类型: TRACE_KIND_* */
+    uint16_t e2e_us;       /* 端到端延迟 (us), 0=无效 */
+    uint16_t motor_id;     /* 电机ID, 0=多轴/聚合 */
+    uint16_t reserved;
+    uint32_t ts_us;        /* 起始时刻低32位 (CLOCK_MONOTONIC us), 辅助定位 */
+} trace_sample_t;
+
+/*
+ * 分段耗时统计 (min / avg / max).
+ * avg 由 sum_us / count 计算, 避免共享内存中做除法.
+ * 每个统计项只有唯一写者 (无锁), WebServer 只读:
+ *   up_seg1  (can0收帧→rt读)          RT 写
+ *   up_seg2  (rt读→demo_algo读到)      demo_algo 写
+ *   up_total (can0→demo_algo读到)      demo_algo 写
+ *   dn_seg1  (algo下发→rt读mailbox)    RT 写
+ *   dn_seg2  (rt读→can0发送)           RT 写
+ *   dn_total (algo下发→can0发送)       RT 写
+ */
+typedef struct {
+    uint64_t sum_us;        /* 累计和, avg = sum_us / count */
+    uint32_t min_us;        /* 最小值 */
+    uint32_t max_us;        /* 最大值 */
+    uint32_t count;         /* 样本数 (0=无数据) */
+} trace_stat_t;
+
+/* 单写者聚合: 首次写入初始化 min/max, 之后滚动更新. 单写者下无需原子. */
+static inline void trace_stat_update(trace_stat_t* s, uint64_t v)
+{
+    if (!s) return;
+    if (s->count == 0) {
+        s->min_us = (uint32_t)v;
+        s->max_us = (uint32_t)v;
+        s->sum_us = v;
+        s->count  = 1;
+    } else {
+        if (v < s->min_us) s->min_us = (uint32_t)v;
+        if (v > s->max_us) s->max_us = (uint32_t)v;
+        s->sum_us += v;
+        s->count++;
+    }
+}
+
+typedef struct {
+    uint32_t          magic;                       /* STARK_TRACE_MAGIC */
+    uint32_t          period_us;                   /* RT 周期 (us) */
+    uint32_t          enabled;                     /* 写开关: 0=关 1=开 */
+    volatile uint32_t ctrl_head;                   /* 下行总 ring 写入游标 (RT 写) */
+    volatile uint32_t fb_head;                     /* 上行总 ring 写入游标 (demo_algo 写) */
+    volatile uint32_t jitter_head;                 /* 抖动 ring 写入游标 (RT 写) */
+    /* 分段耗时统计区 (offset 24, 8 字节对齐) */
+    trace_stat_t      up_seg1;
+    trace_stat_t      up_seg2;
+    trace_stat_t      up_total;
+    trace_stat_t      dn_seg1;
+    trace_stat_t      dn_seg2;
+    trace_stat_t      dn_total;
+    trace_sample_t    ctrl_samples[STARK_TRACE_CTRL_RING];
+    trace_sample_t    fb_samples[STARK_TRACE_FB_RING];
+    trace_sample_t    jitter_samples[STARK_TRACE_JITTER_RING];
+} stark_trace_shm_t;
 
 /* 编译期校验 struct 大小, 字段变更时更新此值 */
 /* 编译期校验, ARM64/x86_64 对齐差异需分别适配, 暂时注释 */

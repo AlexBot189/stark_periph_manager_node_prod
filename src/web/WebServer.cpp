@@ -261,7 +261,8 @@ static const char kHttpOkHeader[] =
  * ================================================================ */
 
 static std::string serialize_to_json(stark_shm_t *shm, const WebServer::CmdTrack &track,
-                                      const std::string &can_rx_json) {
+                                      const std::string &can_rx_json,
+                                      const std::string &trace_json) {
     if (!shm) return "{}";
 
     PeriodicUploadData *d = &shm->periodic_data;
@@ -365,35 +366,9 @@ static std::string serialize_to_json(stark_shm_t *shm, const WebServer::CmdTrack
         "\"rt_priority\":%u,"
         "\"rt_cpu\":%u,"
         "\"perf_trace\":%u,"
-        /* 下行 Ctrl */
-        "\"ctrl_total_avg\":%u,"
-        "\"ctrl_total_max\":%u,"
-        "\"ctrl_total_min\":%u,"
-        "\"mbox_age_max\":%u,"
-        "\"mbox_age_avg\":%u,"
-        "\"mbox_age_min\":%u,"
-        "\"ctrl_e2e_avg\":%u,"
-        "\"ctrl_e2e_min\":%u,"
-        "\"ctrl_e2e_max\":%u,"
-        /* 上行 Fb */
-        "\"fb_age_max\":%u,"
-        "\"fb_age_avg\":%u,"
-        "\"fb_age_min\":%u,"
-        "\"fb_read_avg\":%u,"
-        "\"fb_read_max\":%u,"
-        "\"fb_total_avg\":%u,"
-        "\"fb_total_max\":%u,"
-        "\"fb_total_min\":%u,"
-        "\"shm_write_avg\":%u,"
-        "\"fb_e2e_avg\":%u,"
-        "\"fb_e2e_min\":%u,"
-        "\"fb_e2e_max\":%u,"
-        /* RT 抖动 */
-        "\"jitter_avg\":%u,"
-        "\"jitter_min\":%u,"
+        /* RT 抖动与状态 */
         "\"jitter_max\":%u,"
         "\"overrun\":%u,"
-        "\"trace_cycles\":%u,"
         "\"period_us\":%u,"
         "\"shm_age\":%u,"
         "\"foot_l1\":%u,"
@@ -462,35 +437,9 @@ static std::string serialize_to_json(stark_shm_t *shm, const WebServer::CmdTrack
         shm->rt_priority,
         shm->rt_cpu,
         shm->perf_trace_enabled,
-        /* 下行 Ctrl */
-        shm->ctrl_total_avg_us,
-        shm->ctrl_total_max_us,
-        shm->ctrl_total_min_us,
-        shm->mbox_age_max_us,
-        shm->mbox_age_avg_us,
-        shm->mbox_age_min_us,
-        shm->ctrl_e2e_avg_us,
-        shm->ctrl_e2e_min_us,
-        shm->ctrl_e2e_max_us,
-        /* 上行 Fb */
-        shm->fb_age_max_us,
-        shm->fb_age_avg_us,
-        shm->fb_age_min_us,
-        shm->fb_read_avg_us,
-        shm->fb_read_max_us,
-        shm->fb_total_avg_us,
-        shm->fb_total_max_us,
-        shm->fb_total_min_us,
-        shm->shm_write_avg_us,
-        shm->fb_e2e_avg_us,
-        shm->fb_e2e_min_us,
-        shm->fb_e2e_max_us,
-        /* RT 抖动 */
-        shm->cycle_jitter_avg_us,
-        shm->cycle_jitter_min_us,
+        /* RT 抖动与状态 */
         shm->cycle_jitter_max_us,
         shm->cycle_overrun_count,
-        shm->trace_cycle_count,
         shm->period_us,
         shm_age,
         d->foot_pressure.left.adc[0],
@@ -505,8 +454,113 @@ static std::string serialize_to_json(stark_shm_t *shm, const WebServer::CmdTrack
     /* append can_rx JSON */
     std::string json(buf);
     json += can_rx_json;
+    json += trace_json;
     json += "}";
     return json;
+}
+
+/* ================================================================
+ * BuildTraceJson — 读逐帧监控 SHM, 构造增量 trace JSON 片段
+ *
+ * 增量语义: 只推上次 head 之后的新样本 (5ms 推送约 5 帧, 不额外耗时),
+ * 前端自行累积滚动窗口. 首次或游标异常时对齐到最近 256 帧.
+ * ================================================================ */
+
+std::string WebServer::BuildTraceJson()
+{
+    if (!m_trace_shm) return "";
+
+    uint32_t ctrl_h   = __atomic_load_n(&m_trace_shm->ctrl_head,   __ATOMIC_ACQUIRE);
+    uint32_t fb_h     = __atomic_load_n(&m_trace_shm->fb_head,     __ATOMIC_ACQUIRE);
+    uint32_t jitter_h = __atomic_load_n(&m_trace_shm->jitter_head, __ATOMIC_ACQUIRE);
+
+    std::string out;
+    out += ",\"trace_head\":[" + std::to_string(ctrl_h) + "," + std::to_string(fb_h) + "," + std::to_string(jitter_h) + "]";
+
+    /* 分段耗时统计区 (min/avg/max, 唯一写者, WebServer 只读) */
+    {
+        auto stat_json = [](const trace_stat_t& s) -> std::string {
+            uint32_t n = s.count;
+            if (n == 0) return "{\"min\":0,\"avg\":0,\"max\":0,\"n\":0}";
+            uint32_t avg = (uint32_t)(s.sum_us / n);
+            char tmp[64];
+            snprintf(tmp, sizeof(tmp), "{\"min\":%u,\"avg\":%u,\"max\":%u,\"n\":%u}",
+                     s.min_us, avg, s.max_us, n);
+            return std::string(tmp);
+        };
+        out += ",\"trace_stat\":{"
+               "\"up_seg1\":"  + stat_json(m_trace_shm->up_seg1)  + ","
+               "\"up_seg2\":"  + stat_json(m_trace_shm->up_seg2)  + ","
+               "\"up_total\":" + stat_json(m_trace_shm->up_total) + ","
+               "\"dn_seg1\":"  + stat_json(m_trace_shm->dn_seg1)  + ","
+               "\"dn_seg2\":"  + stat_json(m_trace_shm->dn_seg2)  + ","
+               "\"dn_total\":" + stat_json(m_trace_shm->dn_total) +
+               "}";
+    }
+
+    /* ctrl ring 增量 (单帧/多帧控制 e2e) */
+    {
+        uint32_t last = m_trace_last_ctrl_head;
+        if (!m_trace_synced || last > ctrl_h) {
+            last = (ctrl_h > 512) ? (ctrl_h - 512) : 0;
+        }
+        uint32_t count = ctrl_h - last;
+        if (count > 512) count = 512;
+        out += ",\"trace_ctrl\":[";
+        for (uint32_t i = 0; i < count; i++) {
+            uint32_t cursor = last + i;
+            const trace_sample_t* s = &m_trace_shm->ctrl_samples[cursor % STARK_TRACE_CTRL_RING];
+            char tmp[48];
+            snprintf(tmp, sizeof(tmp), "%s[%u,%u,%u,%u]",
+                     i ? "," : "", s->cycle, s->kind, s->e2e_us, s->motor_id);
+            out += tmp;
+        }
+        out += "]";
+        m_trace_last_ctrl_head = last + count;
+    }
+
+    /* fb ring 增量 (反馈帧 e2e) */
+    {
+        uint32_t last = m_trace_last_fb_head;
+        if (!m_trace_synced || last > fb_h) {
+            last = (fb_h > 512) ? (fb_h - 512) : 0;
+        }
+        uint32_t count = fb_h - last;
+        if (count > 512) count = 512;
+        out += ",\"trace_fb\":[";
+        for (uint32_t i = 0; i < count; i++) {
+            uint32_t cursor = last + i;
+            const trace_sample_t* s = &m_trace_shm->fb_samples[cursor % STARK_TRACE_FB_RING];
+            char tmp[32];
+            snprintf(tmp, sizeof(tmp), "%s[%u,%u]", i ? "," : "", s->cycle, s->e2e_us);
+            out += tmp;
+        }
+        out += "]";
+        m_trace_last_fb_head = last + count;
+    }
+
+    /* jitter ring 增量 */
+    {
+        uint32_t last = m_trace_last_jitter_head;
+        if (!m_trace_synced || last > jitter_h) {
+            last = (jitter_h > 1024) ? (jitter_h - 1024) : 0;
+        }
+        uint32_t count = jitter_h - last;
+        if (count > 1024) count = 1024;
+        out += ",\"trace_jitter\":[";
+        for (uint32_t i = 0; i < count; i++) {
+            uint32_t cursor = last + i;
+            const trace_sample_t* s = &m_trace_shm->jitter_samples[cursor % STARK_TRACE_JITTER_RING];
+            char tmp[32];
+            snprintf(tmp, sizeof(tmp), "%s[%u,%u]", i ? "," : "", s->cycle, s->e2e_us);
+            out += tmp;
+        }
+        out += "]";
+        m_trace_last_jitter_head = last + count;
+    }
+
+    m_trace_synced = true;
+    return out;
 }
 
 /* ================================================================
@@ -1153,6 +1207,16 @@ void WebServer::PullLoop()
                             ECO_INFO_NEW("[WebServer] report paused");
                         } else if (msg.find("\"perf_reset\"") != std::string::npos) {
                             if (m_shm) __atomic_store_n(&m_shm->perf_reset_request, 1, __ATOMIC_RELEASE);
+                            /* 同时清零逐帧 trace 统计区: min/avg/max 重新累计.
+                             * 与写者并发的最坏影响 = 重置瞬间丢失/多出 1 个样本, 可忽略. */
+                            if (m_trace_shm) {
+                                memset(&m_trace_shm->up_seg1,  0, sizeof(trace_stat_t));
+                                memset(&m_trace_shm->up_seg2,  0, sizeof(trace_stat_t));
+                                memset(&m_trace_shm->up_total, 0, sizeof(trace_stat_t));
+                                memset(&m_trace_shm->dn_seg1,  0, sizeof(trace_stat_t));
+                                memset(&m_trace_shm->dn_seg2,  0, sizeof(trace_stat_t));
+                                memset(&m_trace_shm->dn_total, 0, sizeof(trace_stat_t));
+                            }
                             ECO_INFO_NEW("[WebServer] perf max reset requested");
                         } else {
                             dispatch_command(m_shm, m_motor_hal, msg, m_last_cmd);
@@ -1196,7 +1260,8 @@ void WebServer::PullLoop()
                         }
                         can_rx_json += "]";
                     }
-                    std::string json = serialize_to_json(m_shm, m_last_cmd, can_rx_json);
+                    std::string trace_json = BuildTraceJson();
+                    std::string json = serialize_to_json(m_shm, m_last_cmd, can_rx_json, trace_json);
                     std::string frame = ws_frame_text(json);
 
                     std::lock_guard<std::mutex> lk(m_clients_mutex);
