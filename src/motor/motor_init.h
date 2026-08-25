@@ -58,7 +58,7 @@ public:
     FootPressureSensor* GetFootPressureSensor() { return m_foot_sensor; }
 
     /* 配置 (从 config.json 读取, 或默认值) */
-    const SafetyConfig& GetSafetyConfig()  { return m_safety_cfg; }
+    uint32_t          GetHeartbeatTimeoutMs() const { return m_heartbeat_timeout_ms; }
     const RtConfig&     GetRtConfig()      { return m_rt_cfg; }
     const std::string&  GetShmName()       { return m_shm_name; }
     const std::string&  GetCanIface()      { return m_can_iface; }
@@ -104,7 +104,7 @@ private:
     std::string m_config_path;
 
     /* 配置 (优先 config.json, 读失败则默认值) */
-    SafetyConfig m_safety_cfg;
+    uint32_t     m_heartbeat_timeout_ms = 1000;  /* 算法心跳超时 (写 SHM) */
     RtConfig     m_rt_cfg;
     std::string  m_shm_name  = STARK_SHM_NAME;
     size_t       m_shm_size_bytes = STARK_SHM_SIZE;

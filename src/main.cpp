@@ -102,8 +102,7 @@ int main(int argc, char** argv)
                                   g_dispatcher->GetFootPressureSensor(),
                                   motor_count);
 
-    g_rt_worker->SetSafetyConfig(g_dispatcher->GetSafetyConfig());
-    shm->algo_heartbeat_timeout_ms = g_dispatcher->GetSafetyConfig().heartbeat_timeout_ms;
+    shm->algo_heartbeat_timeout_ms = g_dispatcher->GetHeartbeatTimeoutMs();
 
     RtConfig rt_cfg = g_dispatcher->GetRtConfig();
     g_rt_worker->SetRtConfig(rt_cfg);

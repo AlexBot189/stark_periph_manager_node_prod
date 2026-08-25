@@ -5,8 +5,6 @@
  * 所有 SDO/PDO/OD 通过 StarkMotorCtrl 封装.
  */
 #include "motor/motor_init.h"
-#include "imu/imu_sensor.h"
-#include "foot_pressure/FootPressureSensor.h"
 #include "framework/device_manager.h"
 #include "framework/motor_canfd.h"
 #include "framework/imu_sensor_device.h"
@@ -341,13 +339,9 @@ bool CanDispatcher::LoadMotorConfig()
             }
         }
 
-        /* 解析 safety */
+        /* 解析 safety (只保留 heartbeat_timeout_ms 写 SHM; 其余安全项由驱动板硬件保护覆盖) */
         if (cfg.contains("safety")) {
-            auto& s = cfg["safety"];
-            m_safety_cfg.heartbeat_timeout_ms = s.value("heartbeat_timeout_ms", 1000u);
-            m_safety_cfg.overtemp_celsius  = s.value("overtemp_celsius",  80);
-            m_safety_cfg.can_offline_ms    = s.value("can_offline_ms",    2000u);
-            m_safety_cfg.encoder_stall_s   = s.value("encoder_stall_s",   3u);
+            m_heartbeat_timeout_ms = cfg["safety"].value("heartbeat_timeout_ms", 1000u);
         }
 
         /* 解析 rt */

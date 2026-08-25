@@ -29,13 +29,6 @@ class StarkMotorCtrl;
 class IImuSource;
 class FootPressureSensor;
 
-struct SafetyConfig {
-    uint32_t heartbeat_timeout_ms = 1000;
-    int32_t  overtemp_celsius  = 80;
-    uint32_t can_offline_ms    = 2000;
-    uint32_t encoder_stall_s   = 3;
-};
-
 struct RtConfig {
     int      priority         = 90;
     int      recv_priority    = 85;
@@ -62,7 +55,6 @@ public:
     void Stop();
     bool IsRunning() const { return m_running.load(std::memory_order_acquire); }
 
-    void SetSafetyConfig(const SafetyConfig& cfg) { m_safety = cfg; }
     void SetRtConfig(const RtConfig& cfg);
 
     /* 诊断 */
@@ -104,7 +96,6 @@ public:
     std::atomic<bool> m_running{false};
     std::thread       m_thread;
 
-    SafetyConfig m_safety;
     RtConfig     m_rt;
 
     /* 周期控制 */
