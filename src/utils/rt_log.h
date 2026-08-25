@@ -148,3 +148,12 @@ const char* rt_log_event_fmt(uint32_t event_id);
 
 /* 格式化一条事件到 out (drain 侧用, 非 RT, 支持 %u/%d/%x/%c/%llu/%lld/%%) */
 int rt_log_format(const rt_log_event_t* ev, char* out, size_t n);
+
+/* 初始化文件 sink (读 ECO_RT_LOG_* 环境变量 + 打开文件), 0=成功 */
+int rt_log_sink_init(void);
+
+/* 轮询所有 producer ring, 格式化 + 写文件/console (非 RT, drain 线程调用) */
+void rt_log_drain(void);
+
+/* 关闭文件 sink (flush 后关闭) */
+void rt_log_sink_close(void);
