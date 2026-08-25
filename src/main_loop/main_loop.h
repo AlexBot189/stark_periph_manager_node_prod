@@ -3,7 +3,7 @@
  * Copyright (c) 2026 zhiqiang.yang
  *
  * 从 src/main.cpp 提取主循环和所有轮询函数.
- * 全局变量 (g_running, g_log_running, g_dispatcher, g_rt_worker, g_rt_log, g_ctx)
+ * 全局变量 (g_running, g_log_running, g_dispatcher, g_rt_worker, g_ctx)
  * 留在 src/main.cpp 中, 通过 extern 引用.
  */
 #pragma once

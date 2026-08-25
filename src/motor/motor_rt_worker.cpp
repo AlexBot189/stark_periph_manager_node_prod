@@ -201,9 +201,9 @@ void StarkRtWorker::Run()
         /* 每1000周期 (~1s): 输出周期抖动统计 */
         if (m_rt.perf_trace && (m_cycle_count % 1000) == 0 && m_jitter_cnt > 0) {
             uint32_t avg = (uint32_t)(m_jitter_acc_us / m_jitter_cnt);
-            RT_LOG("CycleJitter | min=%u avg=%u max=%u us (samples=%u) overrun=%llu",
-                   m_jitter_min_us, avg, m_jitter_max_us, m_jitter_cnt,
-                   (unsigned long long)m_overrun_count);
+            RT_LOG(RT_LOG_INFO, CYCLE_JITTER, m_jitter_min_us, avg, m_jitter_max_us, m_jitter_cnt);
+            RT_LOG(RT_LOG_INFO, CYCLE_OVERRUN,
+                   (uint32_t)m_overrun_count, (uint32_t)(m_overrun_count >> 32), 0, 0);
             if (m_shm) {
                 m_shm->cycle_jitter_max_us = m_jitter_max_us;
             }
@@ -313,57 +313,6 @@ inline void _pdo_send_with_switch(motor_hal_t* hal, multi_axis_cmd_t* cmd,
         motor_hal_multi_ctrl(hal, cmd, 1);
     }
 }
-static int _stark_tx_dbg(void)
-{
-    static int e = -1;
-    if (e < 0) {
-        const char* v = getenv("STARK_TX_DEBUG");
-        e = (v && v[0] && v[0] != '0') ? 1 : 0;
-    }
-    return e;
-}
-
-static const char* _stark_cmd_name(uint8_t cmd)
-{
-    switch (cmd) {
-    case STARK_CMD_TORQUE:      return "TORQUE";
-    case STARK_CMD_SPEED:       return "SPEED";
-    case STARK_CMD_POS:         return "POS";
-    case STARK_CMD_MIT:         return "MIT";
-    case STARK_CMD_MIT_MULTI: return "MIT_MULTI";
-    case STARK_CMD_PP:          return "PP";
-    case STARK_CMD_CSV:         return "CSV";
-    case STARK_CMD_MULTI:       return "MULTI";
-    case STARK_CMD_PV:          return "PV";
-    case STARK_CMD_ENABLE:      return "ENABLE";
-    case STARK_CMD_DISABLE:     return "DISABLE";
-    case STARK_CMD_ESTOP:       return "ESTOP";
-    case STARK_CMD_RECOVER:     return "RECOVER";
-    case STARK_CMD_SET_MODE:    return "SET_MODE";
-    case STARK_CMD_CLEAR_FAULT: return "CLEAR_FAULT";
-    case STARK_CMD_SDO_CUR:          return "SDO_CUR";
-    case STARK_CMD_SDO_POS:          return "SDO_POS";
-    case STARK_CMD_SDO_VEL:          return "SDO_VEL";
-    case STARK_CMD_SDO_TORQUE_CALIB: return "SDO_TORQUE_CALIB";
-    case STARK_CMD_SDO_MIT_MIGRATE:  return "SDO_MIT_MIGRATE";
-    default:                          return "?";
-    }
-}
-
-static void _stark_dbg_tx(const motor_command_t& c)
-{
-    if (c.motor_id < 1) return;
-    if (c.cmd == STARK_CMD_MIT) {
-        fprintf(stderr, "[TX] id=%u %s pos=%u vel=%d kp=%u kd=%u tau=%d\n",
-                c.motor_id, _stark_cmd_name(c.cmd),
-                c.mit_pos, c.mit_vel, c.mit_kp, c.mit_kd, c.mit_torque);
-    } else {
-        fprintf(stderr, "[TX] id=%u %s value=%d value2=%d ff=%d\n",
-                c.motor_id, _stark_cmd_name(c.cmd),
-                c.value, c.value2, c.feedforward);
-    }
-}
-
 void StarkRtWorker::ProcessMailbox()
 {
     if (!m_active.load(std::memory_order_acquire)) return;
@@ -384,8 +333,6 @@ void StarkRtWorker::ProcessMailbox()
         /* 下行段1终点: RT 读到 mailbox 帧的时刻 (仅 tracing 开启时打点) */
         if (m_trace_shm && __atomic_load_n(&m_trace_shm->enabled, __ATOMIC_ACQUIRE))
             m_mailbox_read_us = _rt_now_us();
-        if (_stark_tx_dbg()) { _stark_dbg_tx(cmds[0]); _stark_dbg_tx(cmds[1]); }
-
         /* Byte0 管理命令 (改 pdo_byte0) */
         for (int i = 0; i < m_motor_count; i++) {
             motor_command_t c = cmds[i];
@@ -461,7 +408,7 @@ void StarkRtWorker::ProcessMailbox()
 
                 motor_mode_t m = (motor_mode_t)(c.multi_mode & 0x0F);
                 if ((uint8_t)m == 0 || m == MOTOR_MODE_MIT) {
-                    ECO_WARN_NEW("[MULTI] M%d multi_mode=%d invalid, skip", c.motor_id, (int)m);
+                    RT_LOG(RT_LOG_WARN, MULTI_INVALID, (uint32_t)c.motor_id, (uint32_t)m, 0, 0);
                     continue;
                 }
 
@@ -896,7 +843,7 @@ void StarkRtWorker::PublishFeedback()
             fb->sensor[idx].key_landing = s.hw_sw_pc9;
             fb->sensor[idx].data_valid  = s.data_valid;
         } else if (!m_sensor_notified[id - 1]) {
-            RT_LOG("sensor not configured for motor %d (ret=%d)", id, ret);
+            RT_LOG(RT_LOG_WARN, SENSOR_NOCFG, (uint32_t)id, (uint32_t)ret, 0, 0);
             m_sensor_notified[id - 1] = true;
         }
     }
@@ -1040,12 +987,12 @@ void StarkRtWorker::SetThreadRt()
     param.sched_priority = m_rt.priority;
     int ret = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
     if (ret != 0) {
-        RT_LOG("SCHED_FIFO failed (need root/CAP_SYS_NICE)");
+        RT_LOG(RT_LOG_ERROR, SCHED_FIFO_FAIL, 0, 0, 0, 0);
     }
 
     /* 锁定当前+未来全部内存页, 防止 RT 线程缺页中断 */
     if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
-        RT_LOG("mlockall failed (page faults possible)");
+        RT_LOG(RT_LOG_ERROR, MLOCKALL_FAIL, 0, 0, 0, 0);
     }
 
     cpu_set_t cpuset;
@@ -1056,7 +1003,7 @@ void StarkRtWorker::SetThreadRt()
     }
     ret = pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
     if (ret != 0) {
-        RT_LOG("CPU affinity failed");
+        RT_LOG(RT_LOG_ERROR, CPU_AFFINITY_FAIL, 0, 0, 0, 0);
     }
 
     printf("[StarkRtWorker] Thread: SCHED_FIFO prio=%d period=%dus cpu=%d,%d\n",

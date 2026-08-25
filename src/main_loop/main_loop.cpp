@@ -57,7 +57,6 @@ static void request_shutdown()
 /* 引用 main.cpp 中的全局变量 */
 extern volatile int g_running;
 extern volatile int g_log_running;
-extern stark_periph_manager_node::StarkRtLog* g_rt_log;
 extern stark_periph_manager_node::CanDispatcher* g_dispatcher;
 extern stark_periph_manager_node::StarkRtWorker* g_rt_worker;
 
@@ -77,22 +76,47 @@ static std::unique_ptr<ButtonHandler> g_btn_handler;
  * RT 线程写 ring buffer (lock-free, <1μs), 此非 RT 线程负责 drain.
  */
 
-static void rt_log_output_fn(const char* msg)
+static void rt_log_output(const rt_log_event_t* ev, const char* msg)
 {
-    ECO_INFO_NEW("[RT] {}", msg);
+    switch (ev->level) {
+    case RT_LOG_ERROR: ECO_ERROR_NEW("[RT] {}", msg); break;
+    case RT_LOG_WARN:  ECO_WARN_NEW("[RT] {}", msg);  break;
+    case RT_LOG_DEBUG: ECO_DEBUG_NEW("[RT] {}", msg); break;
+    case RT_LOG_TRACE: ECO_TRACE_NEW("[RT] {}", msg); break;
+    default:           ECO_INFO_NEW("[RT] {}", msg);  break;
+    }
+}
+
+/* 轮询所有活跃 producer ring, 读事件 + 格式化 + 输出 (非 RT) */
+static void rt_log_drain(void)
+{
+    rt_log_shm_t* shm = g_rt_log_ctx.shm;
+    if (!shm) return;
+
+    for (int r = 0; r < RT_LOG_MAX_PRODUCERS; r++) {
+        rt_log_ring_t* ring = &shm->rings[r];
+        if (!ring->used) continue;
+
+        uint32_t wr = __atomic_load_n(&ring->wr, __ATOMIC_RELAXED);
+        uint32_t rd = __atomic_load_n(&ring->rd, __ATOMIC_RELAXED);
+        while (rd != wr) {
+            const rt_log_event_t* ev = &ring->events[rd];
+            char buf[256];
+            rt_log_format(ev, buf, sizeof(buf));
+            rt_log_output(ev, buf);
+            rd = (rd + 1) % RT_LOG_RING_SIZE;
+        }
+        __atomic_store_n(&ring->rd, rd, __ATOMIC_RELAXED);
+    }
 }
 
 void* log_drain_thread(void*)
 {
     while (g_log_running) {
-        if (g_rt_log) {
-            g_rt_log->Drain(rt_log_output_fn);
-        }
+        rt_log_drain();
         usleep(50000);  /* 50ms drain */
     }
-    if (g_rt_log) {
-        g_rt_log->Drain(rt_log_output_fn);
-    }
+    rt_log_drain();
     return nullptr;
 }
 

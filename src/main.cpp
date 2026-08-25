@@ -44,8 +44,6 @@ volatile int g_running = 1;
 volatile int g_log_running = 1;
 CanDispatcher*    g_dispatcher = nullptr;
 StarkRtWorker*      g_rt_worker  = nullptr;
-static StarkRtLog   g_rt_log_instance;
-StarkRtLog*         g_rt_log = &g_rt_log_instance;
 
 /* 全局上下文 (状态机 enter/exit 钩子访问) */
 static StarkNodeContext g_node_ctx;
@@ -85,6 +83,11 @@ int main(int argc, char** argv)
         ECO_ERROR_NEW("[main] CanDispatcher init failed");
         delete g_dispatcher;
         return 1;
+    }
+
+    /* 初始化 RT 日志 (共享内存无锁 ring, RT 线程零耗时打日志) */
+    if (rt_log_init(RT_LOG_SHM_NAME, 0) != 0) {
+        ECO_WARN_NEW("[main] rt_log_init failed, RT log disabled");
     }
 
     motor_hal_t* hal = g_dispatcher->GetHal();
