@@ -50,27 +50,33 @@
     "timeout_ms": 10000,
     "threshold_deg": 1.0
   },
-  "imu": {
-    "driver": "invensense",
-    "interface": "i2c",
-    "i2c_dev": "/dev/i2c-3",
-    "spi_dev": "/dev/spidev0.0",
-    "spi_speed_hz": 8000000,
-    "spi_mode": 0,
-    "gpio_chip": "gpiochip4",
-    "gpio_line": 6,
-    "op_mode": 7
+  "sensor": {
+    "period_div": 4,
+    "bus_format": 3,
+    "mode": 3,
+    "force_module": 1,
+    "imu": {
+      "driver": "invensense",
+      "interface": "i2c",
+      "i2c_dev": "/dev/i2c-3",
+      "spi_dev": "/dev/spidev0.0",
+      "spi_speed_hz": 8000000,
+      "spi_mode": 0,
+      "gpio_chip": "gpiochip4",
+      "gpio_line": 6,
+      "op_mode": 7
+    },
+    "foot_pressure": {
+      "enabled": true,
+      "uart_dev": "/dev/ttyS7",
+      "baud_rate": 460800,
+      "timeout_ms": 10
+    }
   },
   "report": {
     "auto_enable": true,
     "period_ms": 5,
     "data_source": "mixed"
-  },
-  "sensor": {
-    "period_div": 4,
-    "bus_format": 3,
-    "mode": 3,
-    "force_module": 1
   },
   "led": {
     "motor_id": 2,
@@ -90,11 +96,5 @@
     "enabled": false,
     "port": 8080,
     "push_period_ms": 5
-  },
-  "foot_pressure": {
-    "enabled": true,
-    "uart_dev": "/dev/ttyS7",
-    "baud_rate": 460800,
-    "timeout_ms": 10
   }
 }

@@ -383,7 +383,7 @@ bool CanDispatcher::LoadMotorConfig()
             m_calib_timeout_ms = c.value("timeout_ms", 10000);
         }
 
-        /* 解析 sensor */
+        /* 解析 sensor (总类: 透传 + imu + foot_pressure 子配置) */
         if (cfg.contains("sensor")) {
             auto& s = cfg["sensor"];
             m_sensor_period_ms = s.value("period_ms", 1u);
@@ -398,29 +398,29 @@ bool CanDispatcher::LoadMotorConfig()
                 m_sensor_period_div = (uint16_t)(m_sensor_period_ms * 2);
             else
                 m_sensor_period_div = 1;
-        }
 
-        /* 解析 imu */
-        if (cfg.contains("imu")) {
-            auto& imu_cfg = cfg["imu"];
-            m_imu_cfg.driver       = imu_cfg.value("driver",    std::string("invensense"));
-            m_imu_cfg.interface    = imu_cfg.value("interface", std::string("i2c"));
-            m_imu_cfg.i2c_dev      = imu_cfg.value("i2c_dev",   std::string("/dev/i2c-3"));
-            m_imu_cfg.spi_dev      = imu_cfg.value("spi_dev",   std::string("/dev/spidev0.0"));
-            m_imu_cfg.spi_speed_hz = imu_cfg.value("spi_speed_hz", 8000000u);
-            m_imu_cfg.spi_mode     = imu_cfg.value("spi_mode",  0u);
-            m_imu_cfg.gpio_chip    = imu_cfg.value("gpio_chip", std::string("gpiochip4"));
-            m_imu_cfg.gpio_line    = imu_cfg.value("gpio_line", 6u);
-            m_imu_cfg.op_mode      = imu_cfg.value("op_mode",   5);
-        }
+            /* imu 子配置 */
+            if (s.contains("imu")) {
+                auto& imu_cfg = s["imu"];
+                m_imu_cfg.driver       = imu_cfg.value("driver",    std::string("invensense"));
+                m_imu_cfg.interface    = imu_cfg.value("interface", std::string("i2c"));
+                m_imu_cfg.i2c_dev      = imu_cfg.value("i2c_dev",   std::string("/dev/i2c-3"));
+                m_imu_cfg.spi_dev      = imu_cfg.value("spi_dev",   std::string("/dev/spidev0.0"));
+                m_imu_cfg.spi_speed_hz = imu_cfg.value("spi_speed_hz", 8000000u);
+                m_imu_cfg.spi_mode     = imu_cfg.value("spi_mode",  0u);
+                m_imu_cfg.gpio_chip    = imu_cfg.value("gpio_chip", std::string("gpiochip4"));
+                m_imu_cfg.gpio_line    = imu_cfg.value("gpio_line", 6u);
+                m_imu_cfg.op_mode      = imu_cfg.value("op_mode",   5);
+            }
 
-        /* 解析 foot_pressure */
-        if (cfg.contains("foot_pressure")) {
-            auto& fp = cfg["foot_pressure"];
-            m_foot_enabled   = fp.value("enabled",    true);
-            m_foot_uart_dev  = fp.value("uart_dev",   std::string("/dev/ttyS7"));
-            m_foot_baud_rate = fp.value("baud_rate",  460800);
-            m_foot_timeout_ms = fp.value("timeout_ms", 10);
+            /* foot_pressure 子配置 */
+            if (s.contains("foot_pressure")) {
+                auto& fp = s["foot_pressure"];
+                m_foot_enabled    = fp.value("enabled",     true);
+                m_foot_uart_dev   = fp.value("uart_dev",    std::string("/dev/ttyS7"));
+                m_foot_baud_rate  = fp.value("baud_rate",   460800);
+                m_foot_timeout_ms = fp.value("timeout_ms",  10);
+            }
         }
 
         /* 解析 report */

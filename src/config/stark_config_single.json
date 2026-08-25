@@ -39,7 +39,22 @@
     "period_div": 1,
     "bus_format": 3,
     "mode": 3,
-    "force_module": 1
+    "force_module": 1,
+    "imu": {
+      "driver": "invensense",
+      "interface": "i2c",
+      "i2c_dev": "/dev/i2c-3",
+      "spi_dev": "/dev/spidev0.0",
+      "spi_speed_hz": 8000000,
+      "spi_mode": 0,
+      "gpio_chip": "gpiochip4",
+      "gpio_line": 6,
+      "op_mode": 5
+    }
+  },
+  "report": {
+    "auto_enable": true,
+    "period_ms": 5
   },
   "led": {
     "motor_id": 0,
@@ -48,21 +63,6 @@
   "buttons": {
     "calib":  { "gpio_chip": "gpiochip4", "line": 7 },
     "report": { "gpio_chip": "gpiochip4", "line": 8 }
-  },
-  "imu": {
-    "driver": "invensense",
-    "interface": "i2c",
-    "i2c_dev": "/dev/i2c-3",
-    "spi_dev": "/dev/spidev0.0",
-    "spi_speed_hz": 8000000,
-    "spi_mode": 0,
-    "gpio_chip": "gpiochip4",
-    "gpio_line": 6,
-    "op_mode": 5
-  },
-  "report": {
-    "auto_enable": true,
-    "period_ms": 5
   },
   "ros": {
     "enabled": false,

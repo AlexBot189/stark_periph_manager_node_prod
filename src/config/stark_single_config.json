@@ -32,26 +32,26 @@
     "timeout_ms": 10000,
     "threshold_deg": 1.0
   },
-  "imu": {
-    "driver": "invensense",
-    "interface": "i2c",
-    "i2c_dev": "/dev/i2c-3",
-    "spi_dev": "/dev/spidev0.0",
-    "spi_speed_hz": 8000000,
-    "spi_mode": 0,
-    "gpio_chip": "gpiochip4",
-    "gpio_line": 6,
-    "op_mode": 7
-  },
-  "report": {
-    "auto_enable": true,
-    "period_ms": 5
-  },
   "sensor": {
     "period_div": 400,
     "bus_format": 3,
     "mode": 2,
-    "force_module": 1
+    "force_module": 1,
+    "imu": {
+      "driver": "invensense",
+      "interface": "i2c",
+      "i2c_dev": "/dev/i2c-3",
+      "spi_dev": "/dev/spidev0.0",
+      "spi_speed_hz": 8000000,
+      "spi_mode": 0,
+      "gpio_chip": "gpiochip4",
+      "gpio_line": 6,
+      "op_mode": 7
+    }
+  },
+  "report": {
+    "auto_enable": true,
+    "period_ms": 5
   },
   "ros": {
     "enabled": false,
