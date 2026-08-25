@@ -11,7 +11,7 @@
 
 namespace stark {
 
-class ImuIcm45608 : public ISensorDevice {
+class ImuIcm45608 : public Device {
 public:
     static Device* create() { return new ImuIcm45608(); }
 
@@ -21,12 +21,13 @@ public:
     bool initialize(const nlohmann::json& config) override;
     bool start() override { return m_imu.IsReady(); }
     void stop() override;
-    bool read(SensorData& out) override;
+
+    /* 获取底层 IMU 源 (RT 线程直接用, 不经过虚接口, 零开销) */
+    stark_periph_manager_node::IImuSource* source() { return &m_imu; }
 
 private:
     std::string                              m_name;
     stark_periph_manager_node::ImuHALSensor  m_imu;
-    imu_data_t                               m_data;
 };
 
 }  // namespace stark

@@ -54,8 +54,8 @@ public:
     motor_hal_t*   GetHal()       { return m_hal; }
     stark_shm_t*     GetShm()       { return m_shm; }
     StarkMotorCtrl*  GetCtrl()      { return m_ctrl.get(); }
-    IImuSource*   GetImuSensor() { return m_imu_sensor.get(); }
-    FootPressureSensor* GetFootPressureSensor() { return m_foot_sensor.get(); }
+    IImuSource*   GetImuSensor() { return m_imu_sensor; }
+    FootPressureSensor* GetFootPressureSensor() { return m_foot_sensor; }
 
     /* 配置 (从 config.json 读取, 或默认值) */
     const SafetyConfig& GetSafetyConfig()  { return m_safety_cfg; }
@@ -112,12 +112,12 @@ private:
     int          m_can_arb_rate  = 1000000;
     int          m_can_data_rate = 5000000;
 
-    /* IMU */
-    std::unique_ptr<IImuSource> m_imu_sensor;
-    ImuConfig    m_imu_cfg;
+    /* IMU (底层对象由 DeviceManager 持有, 这里只存指针) */
+    IImuSource*   m_imu_sensor = nullptr;
+    ImuConfig     m_imu_cfg;
 
-    /* 足底压力传感器 */
-    std::unique_ptr<FootPressureSensor> m_foot_sensor;
+    /* 足底压力传感器 (底层对象由 DeviceManager 持有, 这里只存指针) */
+    FootPressureSensor* m_foot_sensor = nullptr;
     bool        m_foot_enabled   = true;
     std::string m_foot_uart_dev  = "/dev/ttyS7";
     int         m_foot_baud_rate = 460800;

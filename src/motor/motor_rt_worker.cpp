@@ -50,7 +50,6 @@ StarkRtWorker::StarkRtWorker(motor_hal_t* hal, stark_shm_t* shm,
     , m_ctrl(ctrl)
     , m_imu_sensor(imu_sensor)
     , m_foot_sensor(foot_sensor)
-    , m_motor_count(motor_count)
     , m_report_divider(m_rt.report_divider)
     , m_report_enabled(false)
     , m_report_period_ms(5)
@@ -61,6 +60,7 @@ StarkRtWorker::StarkRtWorker(motor_hal_t* hal, stark_shm_t* shm,
     , m_jitter_max_us(0)
     , m_jitter_acc_us(0)
     , m_jitter_cnt(0)
+    , m_motor_count(motor_count)
 {
     memset(m_last_position, 0, sizeof(m_last_position));
     memset(m_pos_stall_us, 0, sizeof(m_pos_stall_us));

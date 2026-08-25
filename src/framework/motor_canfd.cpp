@@ -61,11 +61,11 @@ bool MotorCanfd::initialize(const nlohmann::json& config)
                 fprintf(stderr, "[MotorCanfd] add motor id=%u failed\n", mc.node_id);
                 continue;
             }
-            m_node_ids.push_back(mc.node_id);
+            m_motor_count++;
         }
     }
 
-    if (m_node_ids.empty()) {
+    if (m_motor_count == 0) {
         fprintf(stderr, "[MotorCanfd] no motor configured\n");
         motor_hal_destroy(m_hal);
         m_hal = nullptr;
@@ -73,7 +73,7 @@ bool MotorCanfd::initialize(const nlohmann::json& config)
     }
 
     fprintf(stderr, "[MotorCanfd] initialized: %s %d motor(s)\n",
-            m_name.c_str(), (int)m_node_ids.size());
+            m_name.c_str(), (int)m_motor_count);
     return true;
 }
 
@@ -89,72 +89,7 @@ void MotorCanfd::stop()
     motor_hal_recv_stop(m_hal);
     motor_hal_destroy(m_hal);
     m_hal = nullptr;
-    m_node_ids.clear();
-}
-
-bool MotorCanfd::readFeedback(int index, MotorFeedback& fb)
-{
-    if (!m_hal || !validIndex(index)) return false;
-
-    motor_feedback_t mfb;
-    if (motor_hal_get_feedback(m_hal, m_node_ids[index], &mfb) != 0) {
-        return false;
-    }
-
-    fb.position     = mfb.position;
-    fb.velocity     = mfb.velocity;
-    fb.current      = mfb.current_iq;
-    fb.torque       = mfb.torque_nm;
-    fb.temperature  = mfb.temperature;
-    fb.error_code   = mfb.error_code;
-    fb.mode         = mfb.mode;
-    fb.status       = mfb.status_byte;
-    fb.timestamp_us = mfb.timestamp_us;
-    return true;
-}
-
-bool MotorCanfd::writeCommand(int index, const MotorCommand& cmd)
-{
-    if (!m_hal || !validIndex(index)) return false;
-
-    multi_axis_cmd_t mc = {};
-    mc.node_id       = m_node_ids[index];
-    mc.mode          = (motor_mode_t)cmd.mode;
-    mc.enable        = (cmd.flags & MOTOR_FLAG_ENABLE) != 0;
-    mc.release_brake = (cmd.flags & MOTOR_FLAG_RELEASE_BRAKE) != 0;
-    mc.clear_error   = (cmd.flags & MOTOR_FLAG_CLEAR_ERROR) != 0;
-    mc.target1       = (int16_t)cmd.target1;
-    mc.target2       = (uint16_t)cmd.target2;
-    mc.feedforward   = (int16_t)cmd.feedforward;
-
-    motor_hal_multi_ctrl(m_hal, &mc, 1);
-    return true;
-}
-
-bool MotorCanfd::writeMitCommand(int index, float position, float velocity,
-                                 float kp, float kd, float torque)
-{
-    if (!m_hal || !validIndex(index)) return false;
-    return motor_hal_mit_control(m_hal, m_node_ids[index],
-                                 position, velocity, kp, kd, torque) == 0;
-}
-
-bool MotorCanfd::enable(int index)
-{
-    if (!m_hal || !validIndex(index)) return false;
-    return motor_hal_enable(m_hal, m_node_ids[index]) == 0;
-}
-
-bool MotorCanfd::disable(int index)
-{
-    if (!m_hal || !validIndex(index)) return false;
-    return motor_hal_disable(m_hal, m_node_ids[index]) == 0;
-}
-
-bool MotorCanfd::clearFault(int index)
-{
-    if (!m_hal || !validIndex(index)) return false;
-    return motor_hal_fault_reset(m_hal, m_node_ids[index]) == 0;
+    m_motor_count = 0;
 }
 
 }  // namespace stark

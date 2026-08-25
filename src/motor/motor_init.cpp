@@ -9,6 +9,8 @@
 #include "foot_pressure/FootPressureSensor.h"
 #include "framework/device_manager.h"
 #include "framework/motor_canfd.h"
+#include "framework/imu_sensor_device.h"
+#include "framework/foot_pressure_sensor_device.h"
 #include "nlohmann/json.hpp"
 
 #include <cstring>
@@ -48,7 +50,7 @@ bool CanDispatcher::InitDispatcher()
         return false;
     }
 
-    /* 2. 创建设备 (DeviceManager + MotorCanfd, 电机数由配置决定) */
+    /* 2. 创建设备 (DeviceManager 统一管理电机/IMU/足压生命周期) */
     nlohmann::json devices = nlohmann::json::array();
     {
         nlohmann::json motor_entry;
@@ -60,15 +62,67 @@ bool CanDispatcher::InitDispatcher()
         motor_entry["config"]["motors"]    = m_motors_json;
         devices.push_back(motor_entry);
     }
+
+    /* IMU 接入框架 (driver=invensense 才注册; bosch 未实现, 保持 running without IMU) */
+    if (m_imu_cfg.driver != "bosch") {
+        nlohmann::json imu_entry;
+        imu_entry["name"]                   = "imu";
+        imu_entry["driver"]                 = "imu_icm45608";
+        imu_entry["config"]["driver"]       = m_imu_cfg.driver;
+        imu_entry["config"]["interface"]    = m_imu_cfg.interface;
+        imu_entry["config"]["i2c_dev"]      = m_imu_cfg.i2c_dev;
+        imu_entry["config"]["spi_dev"]      = m_imu_cfg.spi_dev;
+        imu_entry["config"]["spi_speed_hz"] = m_imu_cfg.spi_speed_hz;
+        imu_entry["config"]["spi_mode"]     = m_imu_cfg.spi_mode;
+        imu_entry["config"]["gpio_chip"]    = m_imu_cfg.gpio_chip;
+        imu_entry["config"]["gpio_line"]    = m_imu_cfg.gpio_line;
+        imu_entry["config"]["op_mode"]      = m_imu_cfg.op_mode;
+        devices.push_back(imu_entry);
+    } else {
+        ECO_WARN_NEW("[CanDispatcher] IMU driver 'bosch' not implemented, running without IMU");
+    }
+
+    /* 足压接入框架 (enabled 才注册) */
+    if (m_foot_enabled) {
+        nlohmann::json foot_entry;
+        foot_entry["name"]                 = "foot";
+        foot_entry["driver"]               = "foot_pressure";
+        foot_entry["config"]["uart_dev"]   = m_foot_uart_dev;
+        foot_entry["config"]["baud_rate"]  = m_foot_baud_rate;
+        foot_entry["config"]["timeout_ms"] = m_foot_timeout_ms;
+        devices.push_back(foot_entry);
+    } else {
+        ECO_INFO_NEW("[CanDispatcher] FootPressure disabled (foot_pressure.enabled=false)");
+    }
+
     stark::DeviceManager::instance().loadDevices(devices);
 
     auto* motor_dev = dynamic_cast<stark::MotorCanfd*>(
-        stark::DeviceManager::instance().motor("motor"));
+        stark::DeviceManager::instance().find("motor"));
     if (!motor_dev) {
         ECO_ERROR_NEW("[CanDispatcher] motor device not created (check can/motors config)");
         return false;
     }
     m_hal = motor_dev->hal();
+
+    /* 抽 IMU/足压底层指针 (RT 线程直接用, 不经过虚接口, 零延时) */
+    if (m_imu_cfg.driver != "bosch") {
+        auto* imu_dev = dynamic_cast<stark::ImuIcm45608*>(
+            stark::DeviceManager::instance().find("imu"));
+        m_imu_sensor = imu_dev ? imu_dev->source() : nullptr;
+        if (!m_imu_sensor) {
+            ECO_WARN_NEW("[CanDispatcher] IMU init failed, running without IMU");
+        }
+    }
+    if (m_foot_enabled) {
+        auto* foot_dev = dynamic_cast<stark::FootPressureDevice*>(
+            stark::DeviceManager::instance().find("foot"));
+        m_foot_sensor = foot_dev ? foot_dev->sensor() : nullptr;
+        if (!m_foot_sensor) {
+            ECO_WARN_NEW("[CanDispatcher] FootPressure init failed, running without it");
+        }
+    }
+
     ECO_INFO_NEW("[CanDispatcher] CANFD {}: arb={}bps data={}bps ({} motor(s))",
                  m_can_iface, m_can_arb_rate, m_can_data_rate, m_motor_count);
 
@@ -97,26 +151,7 @@ bool CanDispatcher::InitDispatcher()
     /* 6. 创建 StarkMotorCtrl 封装 */
     m_ctrl = std::make_unique<StarkMotorCtrl>(m_hal);
 
-    /* 7. 初始化 IMU (driver 决定具体实现, 配置已在 LoadMotorConfig 中读取) */
-    if (m_imu_cfg.driver == "bosch") {
-        ECO_WARN_NEW("[CanDispatcher] IMU driver 'bosch' not implemented, running without IMU");
-    } else {
-        m_imu_sensor = std::make_unique<ImuHALSensor>();
-        if (!m_imu_sensor->Init(m_imu_cfg)) {
-            ECO_WARN_NEW("[CanDispatcher] IMU init failed, running without IMU");
-        }
-    }
-
-    /* 7.5 初始化足底压力传感器 */
-    if (m_foot_enabled) {
-        m_foot_sensor = std::make_unique<FootPressureSensor>();
-        if (!m_foot_sensor->Init(m_foot_uart_dev.c_str(), m_foot_baud_rate,
-                                  m_foot_timeout_ms)) {
-            ECO_WARN_NEW("[CanDispatcher] FootPressure init failed, running without it");
-        }
-    } else {
-        ECO_INFO_NEW("[CanDispatcher] FootPressure disabled (foot_pressure.enabled=false)");
-    }
+    /* 7. IMU/足压已在上面通过 DeviceManager 统一创建并抽取底层指针 */
 
     /* 8. 打开共享内存 */
     m_shm_mgr = stark_shm_mgr_open(m_shm_name.c_str(), true, m_shm_size_bytes);
@@ -154,22 +189,12 @@ bool CanDispatcher::DestroyDispatcher()
         }
     }
 
-    /* 停止 IMU HAL */
-    if (m_imu_sensor) {
-        m_imu_sensor->Deinit();
-        m_imu_sensor.reset();
-    }
-
-    /* 停止足底压力传感器 */
-    if (m_foot_sensor) {
-        m_foot_sensor->Deinit();
-        m_foot_sensor.reset();
-    }
-
-    /* 停止设备 (MotorCanfd::stop → recv_stop + destroy) */
+    /* 停止设备 (逆序 stop: foot → imu → motor, 统一由 DeviceManager 管理) */
     stark::DeviceManager::instance().stopAll();
     m_hal = nullptr;
     m_ctrl.reset();
+    m_imu_sensor = nullptr;
+    m_foot_sensor = nullptr;
 
     /* 关闭 SHM */
     if (m_shm) {

@@ -25,15 +25,4 @@ void FootPressureDevice::stop()
     m_foot.Deinit();
 }
 
-bool FootPressureDevice::read(SensorData& out)
-{
-    m_foot.Read(&m_data);
-
-    out.type         = SENSOR_FOOT_PRESSURE;
-    out.size         = sizeof(foot_pressure_data_t);
-    out.data         = &m_data;
-    out.timestamp_us = m_data.timestamp_us;
-    return m_foot.IsReady();
-}
-
 }  // namespace stark

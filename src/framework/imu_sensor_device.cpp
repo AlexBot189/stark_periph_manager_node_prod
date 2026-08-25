@@ -32,15 +32,4 @@ void ImuIcm45608::stop()
     m_imu.Deinit();
 }
 
-bool ImuIcm45608::read(SensorData& out)
-{
-    m_imu.Read(&m_data);
-
-    out.type         = SENSOR_IMU;
-    out.size         = sizeof(imu_data_t);
-    out.data         = &m_data;
-    out.timestamp_us = m_data.timestamp_us;
-    return m_imu.IsReady();
-}
-
 }  // namespace stark

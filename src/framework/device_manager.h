@@ -36,9 +36,8 @@ public:
     bool startAll();
     void stopAll();
 
-    /* 按名查找 */
-    IMotorDevice*  motor(const std::string& name);
-    ISensorDevice* sensor(const std::string& name);
+    /* 按名查找 (返回基类指针, 调用方 dynamic_cast 到具体 L0 类型) */
+    Device* find(const std::string& name);
     const std::vector<std::unique_ptr<Device>>& all() const { return m_devices; }
 
 private:

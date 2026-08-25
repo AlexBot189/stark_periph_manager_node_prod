@@ -11,7 +11,7 @@
 
 namespace stark {
 
-class FootPressureDevice : public ISensorDevice {
+class FootPressureDevice : public Device {
 public:
     static Device* create() { return new FootPressureDevice(); }
 
@@ -21,12 +21,13 @@ public:
     bool initialize(const nlohmann::json& config) override;
     bool start() override { return m_foot.IsReady(); }
     void stop() override;
-    bool read(SensorData& out) override;
+
+    /* 获取底层足压传感器 (RT 线程直接用, 不经过虚接口, 零开销) */
+    stark_periph_manager_node::FootPressureSensor* sensor() { return &m_foot; }
 
 private:
     std::string                                    m_name;
     stark_periph_manager_node::FootPressureSensor  m_foot;
-    foot_pressure_data_t                           m_data;
 };
 
 }  // namespace stark

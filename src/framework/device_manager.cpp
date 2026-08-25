@@ -83,21 +83,11 @@ void DeviceManager::stopAll()
     }
 }
 
-IMotorDevice* DeviceManager::motor(const std::string& name)
+Device* DeviceManager::find(const std::string& name)
 {
     for (auto& d : m_devices) {
         if (name == d->name()) {
-            return dynamic_cast<IMotorDevice*>(d.get());
-        }
-    }
-    return nullptr;
-}
-
-ISensorDevice* DeviceManager::sensor(const std::string& name)
-{
-    for (auto& d : m_devices) {
-        if (name == d->name()) {
-            return dynamic_cast<ISensorDevice*>(d.get());
+            return d.get();
         }
     }
     return nullptr;
