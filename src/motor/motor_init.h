@@ -65,7 +65,6 @@ public:
 
     /* 配置获取 (主线程读取, 设置 g_ctx) */
     int  GetMotorCount()     const { return m_motor_count; }
-    int  GetCalibTimeoutMs() const { return m_calib_timeout_ms; }
     uint16_t GetSensorPeriodMs()   const { return m_sensor_period_ms; }
     uint16_t GetSensorPeriodDiv()  const { return m_sensor_period_div; }
     uint8_t  GetSensorBusFormat()  const { return m_sensor_bus_format; }
@@ -74,7 +73,6 @@ public:
     bool     GetReportAutoEnable()   const { return m_report_auto_enable; }
     uint32_t GetReportPeriodMs()     const { return m_report_period_ms; }
     const std::string& GetReportDataSource() const { return m_report_data_source; }
-    bool     GetMotorAutoEnable()  const { return m_motor_auto_enable; }
     int      GetLedMotorId()       const { return m_led_motor_id; }
     const std::string& GetBtnCalibChip()  const { return m_btn_calib_chip; }
     int      GetBtnCalibLine()  const { return m_btn_calib_line; }
@@ -127,8 +125,7 @@ private:
     int          m_motor_count    = 2;
     nlohmann::json m_motors_json;   /* 电机配置数组 (传给 MotorCanfd) */
 
-    /* 校准/透传配置 (来自 config.json) */
-    int          m_calib_timeout_ms = 10000;
+    /* 透传配置 (来自 config.json) */
     uint16_t     m_sensor_period_ms = 1;
     uint16_t     m_sensor_period_div = 1;   /* 0.5ms 基准分频, 默认 1 */
     uint8_t      m_sensor_bus_format = 3;  /* CANFD BRS */
@@ -138,7 +135,6 @@ private:
     uint32_t     m_report_period_ms   = 5;    /* 上报周期 ms */
     std::string  m_report_data_source = "mixed"; /* 数据来源: mixed(混合/默认) | unified_6c0(统一6C0) */
     bool         m_log_onoff           = false; /* 调试日志开关: 默认关闭, config中 log_onoff=true 开启 */
-    bool         m_motor_auto_enable  = false; /* 任意电机 auto_enable=true 则置 true */
     int          m_led_motor_id = 0;          /* 0=禁用, 1=右, 2=左 */
 
     /* 按键 */

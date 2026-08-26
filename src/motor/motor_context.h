@@ -21,14 +21,6 @@ struct StarkNodeContext {
     stark_shm_t*   shm          = nullptr;
     int          motor_count  = 2;
 
-    /* 校准相关 */
-    bool         calib_done       = false;   /* 校准是否已完成 */
-    bool         calib_toggle     = false;   /* 按键校准开关: 每次按键翻转, false=校准, true=取消 */
-    void*        calib_ctx        = nullptr;  /* motor_calib_t* opaque */
-    bool         calib_running    = false;
-    bool         calib_requested  = false;   /* 按键或外部触发校准请求 */
-    int          calib_timeout_ms = 10000;
-
     /* 传感器透传 */
     uint16_t     sensor_period_ms = 1;        /* ms (旧字段, 兼容显示用) */
     uint16_t     sensor_period_div = 1;       /* 0.5ms 基准分频, 默认 1=2000Hz */
@@ -50,9 +42,6 @@ struct StarkNodeContext {
     int          btn_calib_long_press_ms = 5000;
     std::string  btn_report_chip;
     int          btn_report_line = -1;
-
-    /* 校准后使能 */
-    bool         calib_enable_after = false;  /* 校准完成后使能电机, 跟随 auto_enable */
 };
 
 }  /* namespace stark_periph_manager_node */

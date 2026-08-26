@@ -17,7 +17,6 @@
 
 extern "C" {
 #include "motor_hal.h"
-#include "motor_calib.h"
 }
 
 #include <log_helper/LogHelper.h>
@@ -148,7 +147,6 @@ int main(int argc, char** argv)
     g_node_ctx.sensor_bus_format = g_dispatcher->GetSensorBusFormat();
     g_node_ctx.sensor_mode = g_dispatcher->GetSensorMode();
     g_node_ctx.sensor_force_module = g_dispatcher->GetSensorForceModule();
-    g_node_ctx.calib_timeout_ms = g_dispatcher->GetCalibTimeoutMs();
     g_node_ctx.report_auto_enable = g_dispatcher->GetReportAutoEnable();
     g_node_ctx.report_period_ms   = g_dispatcher->GetReportPeriodMs();
     g_node_ctx.report_data_source = g_dispatcher->GetReportDataSource();
@@ -158,11 +156,10 @@ int main(int argc, char** argv)
     g_node_ctx.btn_calib_long_press_ms = g_dispatcher->GetBtnCalibLongPressMs();
     g_node_ctx.btn_report_chip    = g_dispatcher->GetBtnReportChip();
     g_node_ctx.btn_report_line    = g_dispatcher->GetBtnReportLine();
-    g_node_ctx.calib_enable_after = g_dispatcher->GetMotorAutoEnable();
 
-    ECO_INFO_NEW("[main] config: motor_count={} sensor_period={}ms bus_fmt={} auto_enable={} data_src={}",
+    ECO_INFO_NEW("[main] config: motor_count={} sensor_period={}ms bus_fmt={} data_src={}",
                  motor_count, g_node_ctx.sensor_period_ms,
-                 g_node_ctx.sensor_bus_format, g_node_ctx.calib_enable_after,
+                 g_node_ctx.sensor_bus_format,
                  g_node_ctx.report_data_source);
 
     g_rt_worker->SetDataSource(g_node_ctx.report_data_source);
@@ -218,12 +215,6 @@ int main(int argc, char** argv)
         g_rt_worker->Stop();
         delete g_rt_worker;
         g_rt_worker = nullptr;
-    }
-
-    /* 清理校准器 */
-    if (g_node_ctx.calib_ctx) {
-        motor_calib_destroy((motor_calib_t*)g_node_ctx.calib_ctx);
-        g_node_ctx.calib_ctx = nullptr;
     }
 
     if (g_dispatcher) {

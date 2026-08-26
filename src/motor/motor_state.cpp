@@ -29,7 +29,9 @@ void enter_booting(void) {
 }
 
 void enter_ready(void) {
-    ECO_INFO_NEW("[StateMachine] enter READY — motors online, waiting calib/cmd");
+    ECO_INFO_NEW("[StateMachine] enter READY — ready, waiting algorithm");
+    /* 就绪信号: 算法 stark_ready() 依赖 calib_state==2 */
+    if (g_ctx && g_ctx->shm) g_ctx->shm->calib_state = 2;
 }
 
 void enter_running(void) {

@@ -131,6 +131,7 @@ static bool any_motor_online(stark_shm_t* shm, int motor_count)
 
 /*
  * any_motor_op_enabled — 是否至少1个在线电机已使能 (算法控制中)
+ *   通过反馈帧 status_byte bit7 判断电机真实使能状态 (PDO 使能也反映在此)
  */
 
 static bool any_motor_op_enabled(motor_hal_t* hal, stark_shm_t* shm, int motor_count)
@@ -138,7 +139,10 @@ static bool any_motor_op_enabled(motor_hal_t* hal, stark_shm_t* shm, int motor_c
     if (!hal || !shm) return false;
     for (int id = 1; id <= motor_count; id++) {
         if (!(shm->motor_online & (1 << (id - 1)))) continue;
-        if (motor_hal_get_state(hal, (uint8_t)id) == MOTOR_STATE_OP_ENABLED) return true;
+        motor_feedback_t fb;
+        if (motor_hal_get_feedback(hal, (uint8_t)id, &fb) == 0) {
+            if (fb.status_byte & 0x80) return true;  /* bit7 = 使能 */
+        }
     }
     return false;
 }

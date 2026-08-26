@@ -334,9 +334,6 @@ bool CanDispatcher::LoadMotorConfig()
             }
             ECO_INFO_NEW("[CanDispatcher] motor count from config: {}", m_motor_count);
             m_motors_json = cfg["motors"];
-            for (const auto& m : cfg["motors"]) {
-                if (m.value("auto_enable", false)) m_motor_auto_enable = true;
-            }
         }
 
         /* 解析 safety (只保留 heartbeat_timeout_ms 写 SHM; 其余安全项由驱动板硬件保护覆盖) */
@@ -375,12 +372,6 @@ bool CanDispatcher::LoadMotorConfig()
                              kb, sizeof(stark_shm_t));
                 m_shm_size_bytes = sizeof(stark_shm_t);
             }
-        }
-
-        /* 解析 calib */
-        if (cfg.contains("calib")) {
-            auto& c = cfg["calib"];
-            m_calib_timeout_ms = c.value("timeout_ms", 10000);
         }
 
         /* 解析 sensor (总类: 透传 + imu + foot_pressure 子配置) */
@@ -469,8 +460,7 @@ bool CanDispatcher::LoadMotorConfig()
     /* 配置文件不存在 ,  全部默认值 */
     ECO_INFO_NEW("[CanDispatcher] config not found, using hardcoded defaults");
 
-    /* 校准/透传默认值 (对齐 motor_tool daemon) */
-    m_calib_timeout_ms = 10000;
+    /* 透传默认值 (对齐 motor_tool daemon) */
     m_sensor_period_ms = 1;
     m_sensor_period_div = 1;
     m_sensor_bus_format = 3;  /* CANFD BRS */
