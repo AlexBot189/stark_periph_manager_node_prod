@@ -5,7 +5,7 @@
  * @brief IMU HAL 使用示例 — 读取 ICM45608 9 轴融合数据
  *
  * 链接 libimu_hal.so。
- * 用法: ./read_sensor [-i /dev/i2c-3] [-g gpiochip4] [-l 2] [-m 5]
+ * 用法: ./read_sensor [-i /dev/i2c-3] [-g gpiochip4] [-l 2] [-m 5] [-x Z,-1,X,-1,Y,1]
  *
  * Copyright (c) 2026 zhiqiang.yang
  */
@@ -42,7 +42,10 @@ static void usage(const char *prog)
     printf("  -g <chip>    GPIO chip    (default: gpiochip4)\n");
     printf("  -l <line>    GPIO line    (default: 2)\n");
     printf("  -m <mode>    opmode 0-9   (default: 5)\n");
+    printf("  -x <map>     mount map    (default: Z,-1,X,-1,Y,1)\n");
     printf("  -h           help\n\n");
+    printf("mount map: robot_x,robot_x_sign,robot_y,robot_y_sign,robot_z,robot_z_sign\n");
+    printf("  axis ∈ {X,Y,Z} (取芯片对应轴), sign ∈ {1,-1}\n");
     printf("Operation modes:\n");
     printf("  0: HRC 200Hz, MAG 100Hz\n");
     printf("  1: HRC 100Hz, MAG 50Hz\n");
@@ -56,20 +59,57 @@ static void usage(const char *prog)
     printf("  9: GAF 50Hz,  MAG 50Hz, GYRO OFF (fusion)\n");
 }
 
+/* 解析 mount 映射 "axis,sign,axis,sign,axis,sign", 返回 0 成功 */
+static int parse_mount(const char *s, int8_t mount_axis[3], int8_t mount_sign[3])
+{
+    char buf[64];
+    char *tok, *save = NULL;
+    int i;
+
+    if (!s || !s[0]) return -1;
+    strncpy(buf, s, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    for (i = 0; i < 3; i++) {
+        tok = strtok_r(i == 0 ? buf : NULL, ",", &save);
+        if (!tok) return -1;
+        if (tok[0] == 'x' || tok[0] == 'X')      mount_axis[i] = 0;
+        else if (tok[0] == 'y' || tok[0] == 'Y') mount_axis[i] = 1;
+        else if (tok[0] == 'z' || tok[0] == 'Z') mount_axis[i] = 2;
+        else return -1;
+
+        tok = strtok_r(NULL, ",", &save);
+        if (!tok) return -1;
+        int s = atoi(tok);
+        if (s != 1 && s != -1) return -1;
+        mount_sign[i] = s;
+    }
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     const char *i2c_dev    = "/dev/i2c-3";
     const char *gpio_chip  = "gpiochip4";
     unsigned int gpio_line = 2;
     int op_mode = 5;
+    int8_t mount_axis[3] = {2, 0, 1};   /* 默认 robot=(-Z,-X,+Y) */
+    int8_t mount_sign[3] = {-1, -1, 1};
     int opt;
 
-    while ((opt = getopt(argc, argv, "i:g:l:m:h")) != -1) {
+    while ((opt = getopt(argc, argv, "i:g:l:m:x:h")) != -1) {
         switch (opt) {
         case 'i': i2c_dev   = optarg; break;
         case 'g': gpio_chip = optarg; break;
         case 'l': gpio_line = (unsigned int)atoi(optarg); break;
         case 'm': op_mode   = atoi(optarg); break;
+        case 'x':
+            if (parse_mount(optarg, mount_axis, mount_sign) != 0) {
+                fprintf(stderr, "Invalid mount spec '%s'\n", optarg);
+                usage(argv[0]);
+                return 1;
+            }
+            break;
         case 'h': usage(argv[0]); return 0;
         default:  usage(argv[0]); return 1;
         }
@@ -84,8 +124,11 @@ int main(int argc, char *argv[])
     signal(SIGTERM, sig_handler);
 
     printf("=== IMU HAL Read Sensor Example ===\n");
-    printf("I2C: %s, GPIO: %s line %u, Mode: %d\n",
-           i2c_dev, gpio_chip, gpio_line, op_mode);
+    printf("I2C: %s, GPIO: %s line %u, Mode: %d, Mount: robot=(%c%c,%c%c,%c%c)\n",
+           i2c_dev, gpio_chip, gpio_line, op_mode,
+           mount_sign[0] < 0 ? '-' : '+', "XYZ"[mount_axis[0]],
+           mount_sign[1] < 0 ? '-' : '+', "XYZ"[mount_axis[1]],
+           mount_sign[2] < 0 ? '-' : '+', "XYZ"[mount_axis[2]]);
 
     /* 1. 创建实例 */
     emd_gaf_t *gaf = emd_gaf_create();
@@ -102,6 +145,12 @@ int main(int argc, char *argv[])
         .gpio_line = gpio_line,
         .op_mode   = op_mode,
     };
+    cfg.mount_axis[0] = mount_axis[0];
+    cfg.mount_axis[1] = mount_axis[1];
+    cfg.mount_axis[2] = mount_axis[2];
+    cfg.mount_sign[0] = mount_sign[0];
+    cfg.mount_sign[1] = mount_sign[1];
+    cfg.mount_sign[2] = mount_sign[2];
     int rc = emd_gaf_init(gaf, &cfg);
     if (rc != 0) {
         fprintf(stderr, "IMU HAL init failed: rc=%d\n", rc);
