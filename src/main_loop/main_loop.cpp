@@ -16,7 +16,6 @@
 
 extern "C" {
 #include "motor_hal.h"
-#include "motor_calib.h"
 }
 
 #include <log_helper/LogHelper.h>
@@ -64,9 +63,9 @@ extern stark_periph_manager_node::StarkRtWorker* g_rt_worker;
 static bool g_sensor_configured[STARK_MAX_MOTORS];
 static bool g_sensor_logged[STARK_MAX_MOTORS];   /* 仅打印一次日志 */
 static bool g_mit_scales_done[STARK_MAX_MOTORS];
-static bool g_calib_triggered = false;
-static bool g_first_boot = true;       /* 首次启动无需校准, 直接进 RUNNING */
 static bool g_sdo_telemetry_started = false;
+static bool g_report_started = false;    /* 周期上报是否已启动 */
+static stark_state_t g_prev_state = STATE_BOOTING;  /* 上一状态, 用于灯效切换 */
 static uint8_t g_prev_online_mask = 0;
 static uint64_t g_boot_first_online_us = 0;  /* 首个电机上线时刻, 用于单电机超时降级 */
 static std::unique_ptr<ButtonHandler> g_btn_handler;
@@ -131,6 +130,96 @@ static bool any_motor_online(stark_shm_t* shm, int motor_count)
 }
 
 /*
+ * any_motor_op_enabled — 是否至少1个在线电机已使能 (算法控制中)
+ */
+
+static bool any_motor_op_enabled(motor_hal_t* hal, stark_shm_t* shm, int motor_count)
+{
+    if (!hal || !shm) return false;
+    for (int id = 1; id <= motor_count; id++) {
+        if (!(shm->motor_online & (1 << (id - 1)))) continue;
+        if (motor_hal_get_state(hal, (uint8_t)id) == MOTOR_STATE_OP_ENABLED) return true;
+    }
+    return false;
+}
+
+/*
+ * set_state_led — 按节点状态设置灯效
+ *   READY=橙呼吸, FAULT=红闪烁, 其余灭灯
+ */
+
+static void set_state_led(motor_hal_t* hal, int led_motor_id, stark_state_t state)
+{
+    if (!hal || led_motor_id < 1) return;
+
+    led_config_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.enable_mask = LED_ALL;
+
+    switch (state) {
+    case STATE_READY:
+        cfg.mode = LED_BREATH;
+        cfg.r = 255; cfg.g = 128; cfg.b = 0;   /* 橙 */
+        break;
+    case STATE_FAULT:
+        cfg.mode = LED_BLINK;
+        cfg.r = 255; cfg.g = 0; cfg.b = 0;     /* 红 */
+        break;
+    default:
+        cfg.enable_mask = 0;                    /* 灭灯 */
+        break;
+    }
+
+    motor_hal_led_set(hal, (uint8_t)led_motor_id, &cfg);
+}
+
+/*
+ * poll_fault_check — 故障检测
+ *   电机 error_code≠0, 或力矩传感器 err==9 → 有故障 (IMU 暂不判断)
+ */
+
+static bool poll_fault_check(motor_hal_t* hal, stark_shm_t* shm, int motor_count)
+{
+    if (!hal || !shm) return false;
+
+    for (int id = 1; id <= motor_count; id++) {
+        if (!(shm->motor_online & (1 << (id - 1)))) continue;
+
+        motor_sensor_t s;
+        if (motor_hal_get_sensor(hal, (uint8_t)id, &s) != 0) continue;
+
+        if (s.error_code != 0) return true;      /* 电机故障 */
+        if (s.spi_error == 9)  return true;      /* 力矩传感器异常 */
+    }
+    return false;
+}
+
+/*
+ * enter_fault_actions — 进入故障态: 停控制 + 失能
+ */
+
+static void enter_fault_actions(stark_shm_t* shm, int motor_count)
+{
+    /* 停 RT 控制, 不接收控制指令 */
+    if (g_rt_worker) g_rt_worker->SetActive(false);
+
+    /* 失能在线电机 (DS402 Shutdown) */
+    if (g_dispatcher) {
+        auto* ctrl = g_dispatcher->GetCtrl();
+        if (ctrl) {
+            for (int id = 1; id <= motor_count; id++) {
+                if (shm->motor_online & (1 << (id - 1))) {
+                    int ret = ctrl->SdoWrite(id, 0x6040, 0, 0x0006, 2);
+                    if (ret != 0) {
+                        ECO_WARN_NEW("[main] SDO shutdown motor {} failed: {}", id, ret);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/*
  * poll_common — 每轮都执行的公共逻辑
  *   motor auto-startup 推进 + SHM online 掩码更新 + sensor 透传自动配置
  */
@@ -154,9 +243,6 @@ static void poll_common(motor_hal_t* hal, stark_shm_t* shm, uint8_t motor_count)
 
     for (uint8_t id = 1; id <= motor_count; id++) {
         if (g_sensor_configured[id - 1]) continue;
-
-        /* 传感器透传仅在校准完成后启用, 与按键校准开关一致 */
-        if (!g_ctx->calib_done) continue;
 
         motor_state_t st = motor_hal_get_state(hal, id);
         if (st >= MOTOR_STATE_SWITCH_ON_DIS && st != MOTOR_STATE_UNKNOWN) {
@@ -221,6 +307,14 @@ static void poll_booting(stark_shm_t* shm, int motor_count,
         g_rt_worker->Start();
         ECO_INFO_NEW("[main] RT worker started (1KHz, {})",
                      enable_rt ? "SCHED_FIFO 90" : "SCHED_OTHER");
+    }
+
+    /* 数据上报: 传感器初始化完就开始 */
+    if (!g_report_started && g_rt_worker && g_ctx->report_auto_enable) {
+        g_rt_worker->SetReportEnabled(true, g_ctx->report_period_ms);
+        g_report_started = true;
+        ECO_INFO_NEW("[main] periodic report enabled, period={}ms",
+                     g_ctx->report_period_ms);
     }
 
     if (!sync_started) {
@@ -306,157 +400,28 @@ static void poll_booting(stark_shm_t* shm, int motor_count,
 
 /*
  * poll_ready — READY 状态逻辑
- *   - 首次启动: 无需校准, 直接进 RUNNING
- *   - 按键触发 calib_requested: 启动校准 (toggle)
- *   - 校准 DONE 后进入 RUNNING
+ *   待算法校准 + 控制. 检测到电机使能 → RUNNING
  */
 
 static void poll_ready(motor_hal_t* hal, stark_shm_t* shm, int motor_count)
 {
-    /* 校准已完成: 激活 RT 线程, 进入 RUNNING */
-    if (g_ctx->calib_done) {
-        if (g_rt_worker && !g_rt_worker->IsActive()) {
-            g_rt_worker->SetActive(true);
-        }
-        if (g_rt_worker && g_ctx->report_auto_enable) {
-            g_rt_worker->SetReportEnabled(true, g_ctx->report_period_ms);
-            ECO_INFO_NEW("[main] periodic report enabled, period={}ms",
-                         g_ctx->report_period_ms);
-        }
-        ECO_INFO_NEW("[main] calib done, entering RUNNING");
+    if (any_motor_op_enabled(hal, shm, motor_count)) {
+        ECO_INFO_NEW("[main] motor enabled by algorithm, entering RUNNING");
         state_transition(STATE_RUNNING);
-        return;
     }
+}
 
-    /* 首次启动: 无需校准, 直接进 RUNNING (传感器透传在校准后才启用) */
-    if (g_first_boot) {
-        g_first_boot = false;
-        ECO_INFO_NEW("[main] first boot, entering RUNNING (no calib)");
-        if (g_rt_worker && !g_rt_worker->IsActive()) {
-            g_rt_worker->SetActive(true);
-        }
-        if (shm) shm->calib_state = 2;  /* 算法 stark_ready() 依赖 calib_state==2 */
-        state_transition(STATE_RUNNING);
-        return;
-    }
+/*
+ * poll_fault — FAULT 状态逻辑
+ *   故障消除自动回 READY
+ */
 
-    /* 校准进行中: 按键取消 (toggle=false=CANCEL, toggle=true=no-op) */
-    if (g_ctx->calib_requested && g_ctx->calib_running) {
-        g_ctx->calib_requested = false;
-        if (!g_ctx->calib_toggle) {
-            ECO_INFO_NEW("[main] calib CANCEL (abort active calib)");
-            if (g_ctx->calib_ctx) {
-                motor_calib_exit((motor_calib_t*)g_ctx->calib_ctx);
-                motor_calib_destroy((motor_calib_t*)g_ctx->calib_ctx);
-                g_ctx->calib_ctx = nullptr;
-            }
-            g_ctx->calib_running = false;
-            g_calib_triggered = false;
-            g_ctx->calib_done = false;
-            if (shm) shm->calib_state = 0;
-            for (uint8_t i = 0; i < (uint8_t)motor_count; i++) {
-                g_sensor_configured[i] = false;
-            }
-            if (g_rt_worker) g_rt_worker->SetReportEnabled(false, 0);
-            ECO_INFO_NEW("[main] calib aborted, report stopped, waiting in READY");
-        }
-        /* toggle=true=CALIBRATE but already running: ignore */
-        return;
-    }
-
-    /* 按键触发校准 (toggle=true=CALIBRATE, toggle=false=CANCEL→fallthrough) */
-    if (g_ctx->calib_requested && !g_ctx->calib_running && !g_calib_triggered) {
-        g_ctx->calib_requested = false;
-        if (!g_ctx->calib_toggle) {
-            /* toggle=false=CANCEL but nothing running: no-op, fallthrough to RUNNING */
-            ECO_INFO_NEW("[main] calib CANCEL (nothing to cancel)");
-        } else {
-            /* toggle=true: 启动校准 */
-            g_calib_triggered = true;
-            ECO_INFO_NEW("[main] starting calibration via button");
-
-            /* 停 RT 控制, 避免 PDO 与 SDO 冲突 */
-            if (g_rt_worker) g_rt_worker->SetActive(false);
-
-            if (!g_ctx->calib_ctx) {
-                g_ctx->calib_ctx = motor_calib_create(hal);
-            }
-
-            if (g_ctx->calib_ctx) {
-                motor_calib_config_t calib_cfg = {};
-                calib_cfg.motor_id_r = (shm && (shm->motor_online & 1)) ? 1 : 0;
-                calib_cfg.motor_id_l = (shm && (shm->motor_online & 2)) ? 2 : 0;
-                calib_cfg.timeout_ms = g_ctx->calib_timeout_ms;
-                calib_cfg.angle_threshold_deg = 1.0f;
-                calib_cfg.ctrl_mode = MOTOR_MODE_CURRENT;
-                calib_cfg.enable_after_done = true;
-
-                int ret = motor_calib_start((motor_calib_t*)g_ctx->calib_ctx, &calib_cfg);
-                if (ret == 0) {
-                    g_ctx->calib_running = true;
-                    if (shm) shm->calib_state = 1;
-                    ECO_INFO_NEW("[main] calib started, waiting for position within ±1°");
-                } else {
-                    ECO_ERROR_NEW("[main] calib start failed");
-                    motor_calib_destroy((motor_calib_t*)g_ctx->calib_ctx);
-                    g_ctx->calib_ctx = nullptr;
-                    g_calib_triggered = false;
-                    if (g_rt_worker) g_rt_worker->SetActive(true);
-                }
-            }
-        }
-    }
-
-    /* 校准轮询 */
-    if (g_ctx->calib_running && g_ctx->calib_ctx) {
-        motor_calib_state_t result = motor_calib_poll(
-            (motor_calib_t*)g_ctx->calib_ctx);
-
-        if (result == MOTOR_CALIB_DONE) {
-            ECO_INFO_NEW("[main] calibration DONE");
-            g_ctx->calib_done = true;
-            g_ctx->calib_running = false;
-            g_calib_triggered = false;
-            motor_calib_destroy((motor_calib_t*)g_ctx->calib_ctx);
-            g_ctx->calib_ctx = nullptr;
-
-            if (g_rt_worker) g_rt_worker->SetActive(true);
-            if (shm) shm->calib_state = 2;
-            if (g_rt_worker && g_ctx->report_auto_enable) {
-                g_rt_worker->SetReportEnabled(true, g_ctx->report_period_ms);
-                ECO_INFO_NEW("[main] periodic report enabled, period={}ms",
-                             g_ctx->report_period_ms);
-            }
-            ECO_INFO_NEW("[main] calibration done, entering RUNNING");
-            state_transition(STATE_RUNNING);
-        } else if (result == MOTOR_CALIB_TIMEOUT) {
-            ECO_WARN_NEW("[main] calibration TIMEOUT, entering RUNNING (degraded)");
-            g_ctx->calib_done = true;
-            g_ctx->calib_running = false;
-            g_calib_triggered = false;
-            motor_calib_destroy((motor_calib_t*)g_ctx->calib_ctx);
-            g_ctx->calib_ctx = nullptr;
-
-            if (g_rt_worker) g_rt_worker->SetActive(true);
-            if (shm) shm->calib_state = 3;
-            if (g_rt_worker && g_ctx->report_auto_enable) {
-                g_rt_worker->SetReportEnabled(true, g_ctx->report_period_ms);
-                ECO_INFO_NEW("[main] periodic report enabled, period={}ms",
-                             g_ctx->report_period_ms);
-            }
-            state_transition(STATE_RUNNING);
-	} else if (result == MOTOR_CALIB_FAILED) {
-		ECO_ERROR_NEW("[main] calibration FAILED (mode set error)");
-		g_ctx->calib_done   = false;
-		g_ctx->calib_running = false;
-		g_calib_triggered   = false;
-		motor_calib_destroy((motor_calib_t*)g_ctx->calib_ctx);
-		g_ctx->calib_ctx = nullptr;
-
-		if (g_rt_worker) g_rt_worker->SetActive(true);
-		if (shm) shm->calib_state = 3;
-		/* 不 state_transition(STATE_RUNNING)，保持当前状态等待重试 */
-	}
+static void poll_fault(motor_hal_t* hal, stark_shm_t* shm, int motor_count)
+{
+    if (!poll_fault_check(hal, shm, motor_count)) {
+        ECO_INFO_NEW("[main] fault cleared, returning READY");
+        if (g_rt_worker) g_rt_worker->SetActive(true);  /* 恢复控制 */
+        state_transition(STATE_READY);
     }
 }
 
@@ -608,61 +573,26 @@ void main_loop_run(motor_hal_t* hal, stark_shm_t* shm,
             poll_ready(hal, shm, motor_count);
             break;
         case STATE_RUNNING:
+            break;
         case STATE_FAULT:
-            /* 按键校准开关: calib_toggle 决定方向, toggle=true=CALIBRATE, toggle=false=CANCEL */
-            if (g_ctx->calib_requested) {
-                g_ctx->calib_requested = false;
-
-                if (g_ctx->calib_toggle) {
-                    /* CALIBRATE: 停 RT, 回 READY 执行校准 */
-                    ECO_INFO_NEW("[main] calib CALIBRATE from RUNNING");
-                    if (g_rt_worker) g_rt_worker->SetActive(false);
-                    g_ctx->calib_done = false;
-                    g_ctx->calib_requested = true;  /* relay to poll_ready */
-                    ECO_INFO_NEW("[main] entering READY for calibration");
-                    state_transition(STATE_READY);
-                } else {
-                    /* CANCEL: 电流=0, 关透传, 关上报, 失能, 回 READY */
-                    ECO_INFO_NEW("[main] calib CANCEL from RUNNING");
-
-                    if (g_rt_worker) {
-                        g_rt_worker->SetActive(false);
-                        g_rt_worker->SetReportEnabled(false, 0);
-                    }
-
-                    /* 如果校准正在运行, 先退出 */
-                    if (g_ctx->calib_running && g_ctx->calib_ctx) {
-                        motor_calib_exit((motor_calib_t*)g_ctx->calib_ctx);
-                        motor_calib_destroy((motor_calib_t*)g_ctx->calib_ctx);
-                        g_ctx->calib_ctx = nullptr;
-                        g_ctx->calib_running = false;
-                        g_calib_triggered = false;
-                    } else {
-                        for (uint8_t id = 1; id <= (uint8_t)motor_count; id++) {
-                            if (shm->motor_online & (1 << (id - 1))) {
-                                motor_hal_sensor_stop(hal, id);
-                                motor_hal_sdo_write(hal, id, 0x6071, 0, 0, 2);
-                                usleep(10000);
-                                int ret = motor_hal_sdo_write(hal, id, 0x6040, 0, 0x06, 2);
-                                if (ret != 0) {
-                                    ECO_WARN_NEW("[main] SDO shutdown motor {} failed: {}", id, ret);
-                                }
-                            }
-                        }
-                    }
-
-                    g_ctx->calib_done = false;
-                    if (shm) shm->calib_state = 0;
-                    for (uint8_t i = 0; i < (uint8_t)motor_count; i++) {
-                        g_sensor_configured[i] = false;
-                    }
-                    ECO_INFO_NEW("[main] motors disabled, entering READY");
-                    state_transition(STATE_READY);
-                }
-            }
+            poll_fault(hal, shm, motor_count);
             break;
         default:
             break;
+        }
+
+        /* 故障检测: READY/RUNNING 态检测到故障 → FAULT */
+        if ((g_stark_state == STATE_READY || g_stark_state == STATE_RUNNING) &&
+            poll_fault_check(hal, shm, motor_count)) {
+            ECO_WARN_NEW("[main] fault detected, entering FAULT");
+            enter_fault_actions(shm, motor_count);
+            state_transition(STATE_FAULT);
+        }
+
+        /* 状态变化时刷新灯效 */
+        if (g_stark_state != g_prev_state) {
+            set_state_led(hal, g_ctx->led_motor_id, g_stark_state);
+            g_prev_state = g_stark_state;
         }
 
         /* RT 线程状态切换请求 */
@@ -680,13 +610,6 @@ void main_loop_run(motor_hal_t* hal, stark_shm_t* shm,
         /* 同步 SHM node_state */
         if (shm) {
             shm->node_state = g_stark_state;
-            /* 消费算法侧校准请求 (按键/命令触发), 翻转 toggle */
-            if (__atomic_load_n(&shm->calib_requested, __ATOMIC_ACQUIRE)) {
-                g_ctx->calib_requested = true;
-                g_ctx->calib_toggle = !g_ctx->calib_toggle;
-                __atomic_store_n(&shm->calib_requested, 0, __ATOMIC_RELEASE);
-                ECO_INFO_NEW("[main] calib requested, toggle={}", g_ctx->calib_toggle ? "CALIBRATE" : "CANCEL");
-            }
         }
 
         usleep(50000);  /* 50ms 轮询 */
