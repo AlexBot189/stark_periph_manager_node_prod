@@ -927,6 +927,16 @@ void motor_hal_set_tpdo_cb(motor_hal_t *hal, uint8_t node_id,
  */
 void motor_hal_multi_ctrl(motor_hal_t *hal, const multi_axis_cmd_t *cmds, uint8_t count);
 
+/**
+ * @brief 单轴 PDO 控制 — 一帧 CANFD 控制单个电机 (0x100 + node_id)
+ *
+ * 与 multi_ctrl 字段语义一致, 但走单轴帧 (COB_PDO_CTRL_BASE),
+ * 供单关节控制路径使用, 不占用多轴广播帧。
+ *
+ * @param cmd 单电机命令
+ */
+int motor_hal_single_ctrl(motor_hal_t *hal, const multi_axis_cmd_t *cmd);
+
 /** @brief MIT 多轴广播 (0x210, 64Byte CAN FD), 一帧同时控制最多6个电机 */
 void motor_hal_mit_multi_ctrl(motor_hal_t *hal, const multi_mit_cmd_t *cmds, uint8_t count);
 

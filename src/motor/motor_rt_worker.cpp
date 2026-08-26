@@ -297,7 +297,7 @@ void StarkRtWorker::ProcessMgmt()
  */
 
 /*
- * 辅助: PDO multi_ctrl 发送, 模式切换时异步补发 (不阻塞 RT 线程)
+ * 辅助: 单轴 PDO 发送 (0x100+node), 模式切换时异步补发 (不阻塞 RT 线程)
  */
 inline void _pdo_send_with_switch(motor_hal_t* hal, multi_axis_cmd_t* cmd,
                                    motor_mode_t* last_mode, motor_mode_t new_mode,
@@ -305,12 +305,12 @@ inline void _pdo_send_with_switch(motor_hal_t* hal, multi_axis_cmd_t* cmd,
 {
     bool mode_changed = (*last_mode != new_mode);
     *last_mode = new_mode;
-    motor_hal_multi_ctrl(hal, cmd, 1);
+    motor_hal_single_ctrl(hal, cmd);
     if (mode_changed) {
         pending_retry[si] = true;
     } else if (pending_retry[si]) {
         pending_retry[si] = false;
-        motor_hal_multi_ctrl(hal, cmd, 1);
+        motor_hal_single_ctrl(hal, cmd);
     }
 }
 void StarkRtWorker::ProcessMailbox()

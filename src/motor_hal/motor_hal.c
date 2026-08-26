@@ -2068,6 +2068,15 @@ void motor_hal_multi_ctrl(motor_hal_t *hal, const multi_axis_cmd_t *cmds, uint8_
     pdo_multi_send(hal->drv, cmds, count);
 }
 
+int motor_hal_single_ctrl(motor_hal_t *hal, const multi_axis_cmd_t *cmd)
+{
+    if (!hal || !hal->drv || !cmd) return -ENODEV;
+    pdo_ctrl_send(hal->drv, cmd->node_id, cmd->mode,
+                  cmd->enable, cmd->release_brake, cmd->clear_error,
+                  cmd->target1, cmd->target2, cmd->feedforward);
+    return 0;
+}
+
 void motor_hal_mit_multi_ctrl(motor_hal_t *hal, const multi_mit_cmd_t *cmds, uint8_t count)
 {
     if (!hal || !hal->drv) return;
