@@ -74,6 +74,9 @@ typedef struct {
     const char   *gpio_chip;     /* GPIO 芯片 */
     unsigned int  gpio_line;     /* GPIO 中断线 */
     int           op_mode;       /* 操作模式 0-9 */
+    /* 坐标轴映射: robot[x,y,z] 取 chip 的 axis(0=X,1=Y,2=Z) + 符号 */
+    int8_t        mount_axis[3];
+    int8_t        mount_sign[3];
 } emd_gaf_cfg_t;
 
 /**

@@ -65,6 +65,12 @@ bool ImuHALSensor::Init(const ImuConfig& cfg)
     gaf_cfg.gpio_chip    = cfg.gpio_chip.c_str();
     gaf_cfg.gpio_line    = cfg.gpio_line;
     gaf_cfg.op_mode      = cfg.op_mode;
+    gaf_cfg.mount_axis[0] = cfg.mount_axis[0];
+    gaf_cfg.mount_axis[1] = cfg.mount_axis[1];
+    gaf_cfg.mount_axis[2] = cfg.mount_axis[2];
+    gaf_cfg.mount_sign[0] = cfg.mount_sign[0];
+    gaf_cfg.mount_sign[1] = cfg.mount_sign[1];
+    gaf_cfg.mount_sign[2] = cfg.mount_sign[2];
 
     const char* dev_name = (gaf_cfg.if_type == EMD_GAF_IF_SPI)
                          ? cfg.spi_dev.c_str() : cfg.i2c_dev.c_str();

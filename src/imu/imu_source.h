@@ -26,6 +26,9 @@ struct ImuConfig {
     std::string gpio_chip   = "gpiochip4";
     uint32_t    gpio_line   = 6;
     int         op_mode     = 5;
+    /* 坐标轴映射: robot[x,y,z] 取 chip 的轴(0=X,1=Y,2=Z) + 符号 */
+    int8_t      mount_axis[3] = {2, 0, 1};
+    int8_t      mount_sign[3] = {-1, -1, 1};
 };
 
 /* IMU 数据源接口 */
