@@ -325,13 +325,12 @@ typedef struct {
 
     /* 状态区 (motor_node 写, 算法只读) */
     uint8_t   motor_online;               /* bit0=右(1) bit1=左(2)                       */
-    uint8_t   calib_state;                /* 0=空闲 1=校准中 2=完成 3=超时                */
     uint8_t   motor_enabled;              /* 每 bit 对应电机使能状态                       */
     uint8_t   motor_severity;             /* 0=OK 1=WARN 2=FAULT                        */
     uint8_t   fault_reason;               /* fault_reason_t 枚举                         */
     uint8_t   node_state;                 /* stark_state_t                                 */
-    uint8_t   calib_requested;            /* 算法写: 1=请求复杂校准 (按键/命令触发)        */
-    uint8_t   _pad_state[1];              /* 对齐                                         */
+    uint8_t   calib_requested;            /* 算法写: 1=请求零位校准 (按键/命令触发)        */
+    uint8_t   _pad_state[2];              /* 对齐 (原 calib_state 已移除)                  */
 
     /* 周期超限统计 (前端显示超限次数) */
     uint32_t  cycle_overrun_count;   /* 周期超限次数 (uint32_t: 长期压测不回绕) */

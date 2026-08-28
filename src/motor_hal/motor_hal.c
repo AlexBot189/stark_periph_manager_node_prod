@@ -1030,6 +1030,21 @@ int motor_hal_set_zero(motor_hal_t *hal, uint8_t node_id)
     return sdo_write_simple(hal->drv, node_id, OD_ZERO_POSITION, 0x00, 1, 4);
 }
 
+int motor_hal_calib_zero(motor_hal_t *hal, uint8_t node_id)
+{
+    int ret;
+
+    /* 1. 失能: DS402 Shutdown (Controlword 0x6040 = 0x06) */
+    ret = motor_hal_sdo_write(hal, node_id, OD_CONTROLWORD, 0x00, 0x06, 2);
+    if (ret != 0) return ret;
+    usleep(50000);  /* 50ms, 等电机停止输出 */
+
+    /* 2. 下发零位 (0x2531) */
+    ret = motor_hal_set_zero(hal, node_id);
+    usleep(20000);  /* 20ms */
+    return ret;
+}
+
 int motor_hal_set_limits(motor_hal_t *hal, uint8_t node_id, float pos_deg, float neg_deg)
 {
     if (!hal || !hal->drv) return -ENODEV;

@@ -500,6 +500,16 @@ int motor_hal_save_flash(motor_hal_t *hal, uint8_t node_id);
 /** @brief 触发零位标定 — 将当前位置记为编码器零点。 */
 int motor_hal_set_zero(motor_hal_t *hal, uint8_t node_id);
 
+/**
+ * @brief 零位校准 — 先 SDO 失能 (DS402 Shutdown), 再下发零位。
+ *
+ * 校准流程: 失能 (0x6040=0x06) → 下发零位 (0x2531)。
+ * 完成后电机处于失能 + 已校零状态, 算法可直接使能并控制。
+ *
+ * @return 0=成功; <0=HAL/SDO 错误
+ */
+int motor_hal_calib_zero(motor_hal_t *hal, uint8_t node_id);
+
 /** @brief 设置软限位, 单位 °。 */
 int motor_hal_set_limits(motor_hal_t *hal, uint8_t node_id, float pos_deg, float neg_deg);
 

@@ -78,7 +78,6 @@ add_custom_build(
 		";${MH_DIR}/motor_hal_startup.c"
 		";${MH_DIR}/utils.c"
 		";${MH_DIR}/motor_hal.c"
-		";${MH_DIR}/motor_calib.c"
 	DEPS "pthread;m"
 )
 

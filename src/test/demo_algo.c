@@ -628,7 +628,7 @@ static void usage(void)
     printf("  disable <id>          失能电机\n");
     printf("  estop   <id>          急停\n");
     printf("  clearf  <id>          清故障\n");
-    printf("  calib                 触发复杂校准 (按键/命令)\n");
+    printf("  calib                 零位校准 (先 SDO 失能再下发零位, 全在线电机)\n");
     printf("  calib_torque <id> <Nm> 力矩传感器标定 (理论力矩 Nm)\n");
     printf("  calib_torque_zero <id>  力矩传感器零漂标定 (理论力矩=0)\n");
     printf("  mit_migrate <id>        MIT缩放迁移: 写 Tmax=20 并保存 Flash\n");
@@ -855,35 +855,11 @@ int main(int argc, char** argv)
         return 0;
     }
     if (strcmp(mode, "calib") == 0) {
-        int prev = stark_calib(&c);
-        const char* prev_name = (prev == 0) ? "IDLE" : (prev == 1) ? "CALIBRATING" :
-                                (prev == 2) ? "READY" : "TIMEOUT";
-        printf("Calib toggle: prev=%s, toggling...\n", prev_name);
-
+        printf("Zero calibration: SDO disable + set zero on all online motors...\n");
         stark_request_calib(&c);
-
-        /* 等待状态变化 */
-        int cs = prev;
-        for (int i = 0; i < 60; i++) {
-            cs = stark_calib(&c);
-            if (cs != prev) break;
-            usleep(500000);
-        }
-
-        if (cs == 1) {
-            /* 校准进行中, 等待完成 */
-            printf("Calibrating...\n");
-            while (stark_is_calibrating(&c)) {
-                usleep(200000);
-            }
-            cs = stark_calib(&c);
-        }
-
-        if (cs == 0)      printf("Calibration cancelled (IDLE).\n");
-        else if (cs == 2) printf("Calibration complete (READY).\n");
-        else if (cs == 3) printf("Calibration timeout!\n");
-        else              printf("Calib state=%d\n", cs);
-
+        /* 主循环异步处理 (失能 + 下发零位), 等一段让 SDO 完成 */
+        usleep(600000);
+        printf("Calibration triggered.\n");
         stark_close(&c);
         return 0;
     }

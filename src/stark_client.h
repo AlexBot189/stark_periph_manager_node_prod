@@ -119,11 +119,12 @@ static inline void stark_close(stark_client_t* c)
 
 /* -- 状态查询 ---------------------------------------------------- */
 
-/* 电机就绪: calib_state==2 表示可控制.*/
+/* 电机就绪: node_state 进入 READY/RUNNING 即可控制 (不依赖校准状态).*/
 static inline int stark_ready(stark_client_t* c)
 {
     if (!c || !c->shm) return 0;
-    return (c->shm->calib_state == 2);
+    uint8_t s = __atomic_load_n(&c->shm->node_state, __ATOMIC_ACQUIRE);
+    return (s == STATE_READY || s == STATE_RUNNING);
 }
 
 static inline int stark_online(stark_client_t* c, int id)
@@ -136,19 +137,6 @@ static inline int stark_state(stark_client_t* c)
 {
     if (!c || !c->shm) return 0;
     return __atomic_load_n(&c->shm->node_state, __ATOMIC_ACQUIRE);
-}
-
-static inline int stark_calib(stark_client_t* c)
-{
-    if (!c || !c->shm) return 0;
-    return c->shm->calib_state;
-}
-
-/* 校准进行中: calib_state==1 */
-static inline int stark_is_calibrating(stark_client_t* c)
-{
-    if (!c || !c->shm) return 0;
-    return (c->shm->calib_state == 1);
 }
 
 static inline int stark_severity(stark_client_t* c)
@@ -605,7 +593,7 @@ static inline void stark_recover(stark_client_t* c, int id)
 static inline void stark_clear_fault(stark_client_t* c, int id)
     { _stark_mgmt_cmd(c, id, STARK_CMD_CLEAR_FAULT); }
 
-/* 按键 3连击等效. 调用后轮询 stark_ready/stark_is_calibrating 获取状态. */
+/* 零位校准请求 (按键 3连击等效): 主循环收到后 先 SDO 失能再下发零位. */
 static inline void stark_request_calib(stark_client_t* c)
 {
     if (!c || !c->shm) return;

@@ -290,7 +290,6 @@ static std::string serialize_to_json(stark_shm_t *shm, const WebServer::CmdTrack
         "\"sensor_ts\":%u,"
         "\"rt_mode\":%u,"
         "\"state\":%u,"
-        "\"calib\":%u,"
         "\"online\":%u,"
         /* right motor (ID=1) */
         "\"m1_angle\":%.1f,"
@@ -385,7 +384,6 @@ static std::string serialize_to_json(stark_shm_t *shm, const WebServer::CmdTrack
         d->sensor_ts_us,
         shm->rt_mode,
         shm->node_state,
-        shm->calib_state,
         shm->motor_online,
         (float)d->motor_abs_angle / 10.0f,
         d->RealtimeVelocity,

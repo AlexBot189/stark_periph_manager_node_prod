@@ -546,6 +546,30 @@ static void poll_led_commands(motor_hal_t* hal, stark_shm_t* shm, int led_motor_
 }
 
 /*
+ * poll_calib_request — 零位校准请求处理 (按键/算法写 calib_requested)
+ *   收到请求 → 清标志 → 逐电机执行 先 SDO 失能 再下发零位。
+ *   按键 3连击 与 算法 stark_request_calib() 走同一路径。
+ */
+
+static void poll_calib_request(motor_hal_t* hal, stark_shm_t* shm, int motor_count)
+{
+    if (!hal || !shm) return;
+
+    if (!__atomic_load_n(&shm->calib_requested, __ATOMIC_ACQUIRE)) return;
+    __atomic_store_n(&shm->calib_requested, 0, __ATOMIC_RELEASE);
+
+    for (int id = 1; id <= motor_count; id++) {
+        if (!(shm->motor_online & (1 << (id - 1)))) continue;  /* 只校准在线电机 */
+        int ret = motor_hal_calib_zero(hal, (uint8_t)id);
+        if (ret == 0) {
+            ECO_INFO_NEW("[CALIB] motor {} zero calibrated (disable + set zero)", id);
+        } else {
+            ECO_WARN_NEW("[CALIB] motor {} calib failed ret={}", id, ret);
+        }
+    }
+}
+
+/*
  * main_loop_run() — 主循环 (非阻塞, 状态分发)
  */
 
@@ -610,6 +634,9 @@ void main_loop_run(motor_hal_t* hal, stark_shm_t* shm,
 
         /* 按键 */
         if (g_btn_handler) g_btn_handler->poll();
+
+        /* 零位校准请求 (按键/算法 同路径) */
+        poll_calib_request(hal, shm, motor_count);
 
         /* 同步 SHM node_state */
         if (shm) {
