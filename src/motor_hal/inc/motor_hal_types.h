@@ -488,7 +488,6 @@ typedef void (*motor_feedback_cb_t)(uint8_t node_id, const motor_feedback_t *fb,
 typedef void (*motor_error_cb_t)(uint8_t node_id, uint16_t error_code, void *ctx);
 typedef void (*motor_state_cb_t)(uint8_t node_id, motor_state_t old_state, motor_state_t new_state, void *ctx);
 typedef void (*motor_sensor_cb_t)(uint8_t node_id, const motor_sensor_t *s, void *ctx);
-typedef void (*motor_tpdo_raw_cb_t)(uint8_t node_id, const canfd_frame_t *f, void *ctx);
 
 /* ============================================================================
  * LED 灯控制 (OD 0x5503:06, SDO 读写)

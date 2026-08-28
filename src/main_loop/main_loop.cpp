@@ -63,7 +63,7 @@ extern stark_periph_manager_node::StarkRtWorker* g_rt_worker;
 static bool g_sensor_configured[STARK_MAX_MOTORS];
 static bool g_sensor_logged[STARK_MAX_MOTORS];   /* 仅打印一次日志 */
 static bool g_mit_scales_done[STARK_MAX_MOTORS];
-static bool g_sdo_telemetry_started = false;
+static bool g_post_sync_init_done = false; /* post-sync 一次性初始化 (LED/按键) */
 static bool g_report_started = false;    /* 周期上报是否已启动 */
 static stark_state_t g_prev_state = STATE_BOOTING;  /* 上一状态, 用于灯效切换 */
 static uint8_t g_prev_online_mask = 0;
@@ -337,10 +337,8 @@ static void poll_booting(stark_shm_t* shm, int motor_count,
             }
             if (sync_ok) {
                 sync_started = true;
-                if (!g_sdo_telemetry_started) {
-                    motor_hal_sdo_telemetry_start(hal);
-                    g_sdo_telemetry_started = true;
-                    ECO_INFO_NEW("[main] SDO telemetry thread started (temp+pos @5ms)");
+                if (!g_post_sync_init_done) {
+                    g_post_sync_init_done = true;
 
                     /* LED 灯灭初始化 */
                     int lm = g_ctx->led_motor_id;

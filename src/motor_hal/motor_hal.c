@@ -142,21 +142,15 @@ typedef struct {
     motor_error_cb_t    err_cb;
     motor_state_cb_t    state_cb;
     motor_sensor_cb_t   sensor_cb;
-    motor_tpdo_raw_cb_t tpdo_raw_cb;  /* 标准 TPDO 原始帧回调 */
     void               *fb_ctx;
     void               *err_ctx;
     void               *state_ctx;
     void               *sensor_ctx;
-    void               *tpdo_raw_ctx;
 
     /* 传感器缓存 */
     pthread_mutex_t  sensor_lock;
     motor_sensor_t   cached_sensor;
     uint64_t         last_sensor_us;
-
-    /* SDO telemetry cache (0x300 frame: only Iq valid on RV1126B, temp/pos from SDO) */
-    int32_t  sdo_temp_01c;      /* 0x2663 temperature, 0.1°C, -1=not yet polled */
-    int32_t  sdo_position;      /* 0x6064 position, counts, valid when sdo_temp_01c >= 0 */
 
     /* MIT 快控缩放 (启动时从 OD 读取, 运行中不变) */
     mit_scales_t mit_scales;
@@ -168,10 +162,6 @@ typedef struct {
     /* heartbeat 状态缓存 — 只在变化时打印 */
     uint8_t  last_nmt_state;    /* 上次心跳 NMT 状态 */
 } motor_node_t;
-
-/* SDO telemetry polling thread state */
-static pthread_t sdo_telemetry_thread;
-static bool      sdo_telemetry_running = false;
 
 /* =====================================================
  * HAL 主结构
@@ -355,8 +345,6 @@ int motor_hal_add_motor(motor_hal_t *hal, const motor_config_t *cfg)
     m->pending_startup = false;
     m->pdo_byte0       = 0x00;  /* 默认全关, 算法显式调 pdo_enable 才开启 */
     m->clr_err_pending = false;
-    m->sdo_temp_01c    = -1;     /* 尚未 SDO 轮询 */
-    m->sdo_position    = 0;
     /* 默认 MIT 缩放 (KWS CANFD V2 出厂值), 后续由 motor_hal_read_mit_scales 覆盖 */
     m->mit_scales.pmax  = 3.14f;
     m->mit_scales.vmax  = 3.14f;
@@ -1554,53 +1542,6 @@ static void _dispatch_frame(motor_hal_t *hal, const canfd_frame_t *f)
         break;
     }
 
-    case 0x180: {  /* 标准 TPDO1 (同步周期上报: 0x180+node) */
-        uint8_t node = (uint8_t)(f->id & 0x7F);
-        motor_node_t *m = _find_motor(hal, node);
-        if (!m) break;
-
-        /* 优先调用户自定义回调 (自定义映射时) */
-        if (m->tpdo_raw_cb) {
-            m->tpdo_raw_cb(node, f, m->tpdo_raw_ctx);
-            break;
-        }
-
-        /* 回退: 默认硬编码解析 Statusword+Position+Velocity+Current */
-        if (f->dlc < 8) break;
-        uint16_t sw = (uint16_t)f->data[0] | ((uint16_t)f->data[1] << 8);
-        int32_t  pos = (int32_t)((uint32_t)f->data[2]
-                      | ((uint32_t)f->data[3] << 8)
-                      | ((uint32_t)f->data[4] << 16)
-                      | ((uint32_t)f->data[5] << 24));
-        /* 如果 TPDO 包含了 Velocity + Current (12 bytes), 也解析 */
-        int32_t  vel = 0;
-        int16_t  cur = 0;
-        if (f->dlc >= 12) {
-            vel = (int32_t)((uint32_t)f->data[6]
-                  | ((uint32_t)f->data[7] << 8)
-                  | ((uint32_t)f->data[8] << 16)
-                  | ((uint32_t)f->data[9] << 24));
-            cur = (int16_t)((uint16_t)f->data[10] | ((uint16_t)f->data[11] << 8));
-        }
-
-        /* 更新缓存 (补充 TPDO 数据到缓存) */
-        pthread_mutex_lock(&m->fb_lock);
-        m->cached_fb.position   = (int16_t)pos;  /* 截断到 16bit, 兼容现有类型 */
-        m->cached_fb.velocity   = (int16_t)vel;
-        m->cached_fb.current_iq = cur;
-        m->cached_fb.timestamp_us = motor_utils_now_us();
-        /* 从 statusword 推导状态 */
-        m->cached_fb.status_byte = (sw & 0x000F) |  /* 低4位=状态 */
-                                    ((sw & 0x1000) ? 0 : 0x80);  /* bit12=0, enabled */
-        pthread_mutex_unlock(&m->fb_lock);
-
-        /* 触发反馈回调 */
-        if (m->fb_cb) {
-            m->fb_cb(node, &m->cached_fb, m->fb_ctx);
-        }
-        break;
-    }
-
     case 0x080: {  /* EMCY 紧急报文 */
         uint8_t node = canopen_extract_node(f->id, COB_EMCY_BASE);
         motor_node_t *m = _find_motor(hal, node);
@@ -2023,23 +1964,6 @@ int motor_hal_pdo_map(motor_hal_t *hal, uint8_t node_id,
     return ret;
 }
 
-int motor_hal_tpdo_config(motor_hal_t *hal, uint8_t node_id, uint8_t sync_count)
-{
-    if (!hal || !hal->drv) return -ENODEV;
-    if (sync_count == 0 || sync_count > 240) return -EINVAL;
-
-    pdo_map_entry_cfg_t entries[] = {
-        {OD_STATUSWORD,      0x00, 16},  /* Statusword */
-        {OD_POSITION_ACTUAL, 0x00, 32},  /* Position */
-        {OD_VELOCITY_ACTUAL, 0x00, 32},  /* Velocity */
-        {OD_CURRENT_ACTUAL,  0x00, 16},  /* Current */
-    };
-
-    return motor_hal_pdo_map(hal, node_id, entries, 4, 0,
-                             PDO_TYPE_TPDO,
-                             PDO_TPDO1_COB(node_id), sync_count);
-}
-
 /* =====================================================
  * 标准 RPDO 发送 — 用户自定义映射后发送控制帧
  * ===================================================== */
@@ -2059,22 +1983,6 @@ int motor_hal_rpdo_send(motor_hal_t *hal, uint8_t node_id,
     memcpy(f.data, data, dlc);
 
     return can_driver_send(hal->drv, &f) >= 0 ? 0 : -errno;
-}
-
-/* =====================================================
- * 标准 TPDO 原始帧回调
- * ===================================================== */
-
-void motor_hal_set_tpdo_cb(motor_hal_t *hal, uint8_t node_id,
-                           motor_tpdo_raw_cb_t cb, void *ctx)
-{
-    if (!hal) return;
-    pthread_mutex_lock(&hal->lock);
-    motor_node_t *m = _find_motor(hal, node_id);
-    if (!m) { pthread_mutex_unlock(&hal->lock); return; }
-    m->tpdo_raw_cb   = cb;
-    m->tpdo_raw_ctx  = ctx;
-    pthread_mutex_unlock(&hal->lock);
 }
 
 void motor_hal_multi_ctrl(motor_hal_t *hal, const multi_axis_cmd_t *cmds, uint8_t count)
@@ -2241,91 +2149,4 @@ int motor_hal_get_sensor(motor_hal_t *hal, uint8_t node_id, motor_sensor_t *s)
     pthread_mutex_unlock(&m->sensor_lock);
 
     return 0;
-}
-
-/* =====================================================
- * SDO telemetry: temperature (0x2663) + position (0x6064)
- * 0x300 feedback frame only has valid Iq on RV1126B.
- * Temp/pos polled via dedicated non-RT thread at ~5ms per motor.
- * ===================================================== */
-
-static int motor_hal_poll_sdo_telemetry(motor_hal_t *hal, uint8_t node_id);
-
-static void* _sdo_telemetry_thread_fn(void *arg)
-{
-    motor_hal_t *hal = (motor_hal_t*)arg;
-    
-    while (sdo_telemetry_running) {
-        for (int i = 0; i < hal->motor_count && sdo_telemetry_running; i++) {
-            motor_hal_poll_sdo_telemetry(hal, hal->motors[i].node_id);
-        }
-        usleep(500);
-    }
-    return NULL;
-}
-
-int motor_hal_sdo_telemetry_start(motor_hal_t *hal)
-{
-    if (!hal || sdo_telemetry_running) return -EBUSY;
-    sdo_telemetry_running = true;
-    if (pthread_create(&sdo_telemetry_thread, NULL, _sdo_telemetry_thread_fn, hal) != 0) {
-        sdo_telemetry_running = false;
-        return -1;
-    }
-    return 0;
-}
-
-int motor_hal_sdo_telemetry_stop(motor_hal_t *hal)
-{
-    (void)hal;
-    if (!sdo_telemetry_running) return 0;
-    sdo_telemetry_running = false;
-    pthread_join(sdo_telemetry_thread, NULL);
-    return 0;
-}
-
-int motor_hal_poll_sdo_telemetry(motor_hal_t *hal, uint8_t node_id)
-{
-    if (!hal || !hal->drv) return -ENODEV;
-
-    uint32_t val = 0;
-    int32_t pos = 0;
-
-    /* 0x6064 actual position, counts (温度由 0x6A0 透传帧提供) */
-    if (sdo_read_simple(hal->drv, node_id, 0x6064, 0x00, &val) == 0)
-    pos = (int32_t)val;
-
-    pthread_mutex_lock(&hal->lock);
-    motor_node_t *m = _find_motor(hal, node_id);
-    if (m) { m->sdo_position = pos; }
-    pthread_mutex_unlock(&hal->lock);
-
-    return 0;
-}
-
-int motor_hal_get_sdo_temperature(motor_hal_t *hal, uint8_t node_id, int32_t *temp)
-{
-    if (!hal || !temp) return -EINVAL;
-
-    int ret = -EAGAIN;
-    pthread_mutex_lock(&hal->lock);
-    motor_node_t *m = _find_motor(hal, node_id);
-    if (m && m->sdo_temp_01c >= 0) {
-        *temp = m->sdo_temp_01c;
-        ret = 0;
-    }
-    pthread_mutex_unlock(&hal->lock);
-    return ret;
-}
-
-int motor_hal_get_sdo_position(motor_hal_t *hal, uint8_t node_id, int32_t *pos)
-{
-    if (!hal || !pos) return -EINVAL;
-
-    pthread_mutex_lock(&hal->lock);
-    motor_node_t *m = _find_motor(hal, node_id);
-    if (m) *pos = m->sdo_position;
-    pthread_mutex_unlock(&hal->lock);
-
-    return m ? 0 : -ENOENT;
 }

@@ -719,12 +719,8 @@ void StarkRtWorker::PublishFeedback()
                         else
                             tmp_x100 = (int32_t)mfb.temperature * 10;
 
-                        int32_t sdo_val = 0;
                         int16_t ang_x10;
-                        if (motor_hal_get_sdo_position(m_hal, id, &sdo_val) == 0)
-                            ang_x10 = (int16_t)(sdo_val * 3600 / 65536);
-                        else
-                            ang_x10 = (int16_t)((int32_t)mfb.position * 3600 / 65536);
+                        ang_x10 = (int16_t)((int32_t)mfb.position * 3600 / 65536);
 
                         if (is_right) {
                             d.RealtimeVelocity = vel_x10;

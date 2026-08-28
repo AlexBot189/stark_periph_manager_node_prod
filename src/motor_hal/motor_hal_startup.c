@@ -135,29 +135,5 @@ int motor_startup_full(can_driver_t *drv, const motor_config_t *cfg,
         if (ret != 0) return ret;
     }
 
-    /* 6. 配置 TPDO 同步上报 (如果 tpdo_sync_count > 0) */
-    if (cfg->tpdo_sync_count > 0) {
-        uint32_t cob = (uint32_t)(0x180 + cfg->node_id);
-        ret = sdo_write_simple(drv, cfg->node_id, 0x1800, 0x01,
-                               cob | 0x80000000UL, 4);
-        if (ret == 0) {
-            sdo_write_simple(drv, cfg->node_id, 0x1A00, 0x00, 0, 1);
-            sdo_write_simple(drv, cfg->node_id, 0x1A00, 0x01,
-                             ((uint32_t)0x6041 << 16) | 16, 4);  /* Statusword 16b */
-            sdo_write_simple(drv, cfg->node_id, 0x1A00, 0x02,
-                             ((uint32_t)0x6064 << 16) | 32, 4);  /* Position 32b */
-            sdo_write_simple(drv, cfg->node_id, 0x1A00, 0x03,
-                             ((uint32_t)0x606C << 16) | 32, 4);  /* Velocity 32b */
-            sdo_write_simple(drv, cfg->node_id, 0x1A00, 0x04,
-                             ((uint32_t)0x6078 << 16) | 16, 4);  /* Current 16b */
-            sdo_write_simple(drv, cfg->node_id, 0x1A00, 0x00, 4, 1);
-            sdo_write_simple(drv, cfg->node_id, 0x1800, 0x02,
-                             cfg->tpdo_sync_count, 1);
-            sdo_write_simple(drv, cfg->node_id, 0x1800, 0x01, cob, 4);
-            fprintf(stderr, "[startup] motor %d TPDO1 configured: sync_every=%d\n",
-                    cfg->node_id, cfg->tpdo_sync_count);
-        }
-    }
-
     return 0;
 }

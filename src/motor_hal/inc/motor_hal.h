@@ -863,18 +863,6 @@ int motor_hal_pdo_map(motor_hal_t *hal, uint8_t node_id,
                       uint32_t cob_id, uint8_t trans_type);
 
 /**
- * @brief 配置从站 TPDO1 为同步周期上报 (便捷封装)
- *
- * 调用 motor_hal_pdo_map 实现, 映射固定为:
- *   Statusword(16b) + Position(32b) + Velocity(32b) + Current(16b)
- *
- * @param node_id    电机 CAN 节点 ID
- * @param sync_count 每 N 个 SYNC 发一次 (1~240)
- * @return 0=成功; <0=SDO 失败
- */
-int motor_hal_tpdo_config(motor_hal_t *hal, uint8_t node_id, uint8_t sync_count);
-
-/**
  * @brief 发送标准 RPDO 控制帧 (用户自定义映射后使用)
  *
  * 标准 RPDO 需要通过 SDO 先配置映射 (motor_hal_pdo_map + PDO_TYPE_RPDO),
@@ -896,27 +884,6 @@ int motor_hal_tpdo_config(motor_hal_t *hal, uint8_t node_id, uint8_t sync_count)
  */
 int motor_hal_rpdo_send(motor_hal_t *hal, uint8_t node_id,
                         const uint8_t *data, uint8_t dlc);
-
-/**
- * @brief 注册标准 TPDO 原始帧回调
- *
- * 当自定义 TPDO 映射后, 接收线程收到 TPDO 帧 (COB=0x180+node) 时,
- * 如果注册了此回调, 则调用回调并跳过默认硬编码解析。
- * 回调中用户根据自己的映射配置自行解析数据。
- *
- * @param cb  回调函数, 传 NULL 取消注册
- *
- * @code
- * void my_tpdo(uint8_t id, const canfd_frame_t *f, void *ctx) {
- *     int16_t sw  = f->data[0] | (f->data[1] << 8);
- *     int32_t pos = f->data[2] | (f->data[3] << 8) | ...;
- *     ...
- * }
- * motor_hal_set_tpdo_cb(hal, 1, my_tpdo, NULL);
- * @endcode
- */
-void motor_hal_set_tpdo_cb(motor_hal_t *hal, uint8_t node_id,
-                           motor_tpdo_raw_cb_t cb, void *ctx);
 
 /**
  * @brief 多轴广播控制 — 一帧 CANFD 控制最多 8 个电机
@@ -968,16 +935,6 @@ int motor_hal_get_mos_temp(motor_hal_t *hal, uint8_t node_id, int32_t *temp);
 
 /** @brief 读取电机线圈温度 (OD 0x2663), 单位 0.1°C */
 int motor_hal_get_motor_temp(motor_hal_t *hal, uint8_t node_id, int32_t *temp);
-
-/** @brief SDO telemetry: start background polling thread (~5ms per motor).
- *  Polls temperature (0x2663) and position (0x6064) for all registered motors. */
-int motor_hal_sdo_telemetry_start(motor_hal_t *hal);
-/** @brief SDO telemetry: stop background polling thread. */
-int motor_hal_sdo_telemetry_stop(motor_hal_t *hal);
-/** @brief Get cached SDO temperature, 0.1°C. Returns -EAGAIN if not polled yet. */
-int motor_hal_get_sdo_temperature(motor_hal_t *hal, uint8_t node_id, int32_t *temp);
-/** @brief Get cached SDO position, counts. */
-int motor_hal_get_sdo_position(motor_hal_t *hal, uint8_t node_id, int32_t *pos);
 
 /** @brief 读取最大电流限制 (OD 0x2538), 单位 mA */
 int motor_hal_get_max_current(motor_hal_t *hal, uint8_t node_id, uint32_t *ma);
