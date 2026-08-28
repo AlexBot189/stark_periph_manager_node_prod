@@ -86,6 +86,32 @@ add_custom_build(
 #   不再单独建 libimu_hal.so；排除 demo/example (带 main, 与节点冲突)
 
 # ════════════════════════════════════════════════════════════
+# imu_read_sensor — IMU 测试程序 (读融合数据, 独立编译 imu_hal 源码)
+
+add_custom_build(
+	NAME imu_read_sensor
+	TYPE bin
+	SRCS
+		"${IH_DIR}/example/read_sensor.c"
+		";${IH_DIR}/emd_gaf.c"
+		";${IH_DIR}/invn_mag_ict1531x.c"
+		";${IH_DIR}/driver/icm45608/imu/inv_imu_driver.c"
+		";${IH_DIR}/driver/icm45608/imu/inv_imu_driver_advanced.c"
+		";${IH_DIR}/driver/icm45608/imu/inv_imu_edmp.c"
+		";${IH_DIR}/driver/icm45608/imu/inv_imu_edmp_wearable.c"
+		";${IH_DIR}/driver/icm45608/imu/inv_imu_edmp_mrm.c"
+		";${IH_DIR}/driver/icm45608/imu/inv_imu_transport.c"
+		";${IH_DIR}/driver/icm45608/imu/inv_imu_i2cm.c"
+		";${IH_DIR}/driver/icm45608/imu/inv_imu_selftest.c"
+		";${IH_DIR}/driver/icm45608/imu/sif_classifier_ir.c"
+		";${IH_DIR}/driver/icm45608/imu/sif_feature_extract_ir.c"
+		";${IH_DIR}/driver/Ict1531x/Ict1531x.c"
+		";${IH_DIR}/hal/emd_hal.c"
+		";${IH_DIR}/tools/Invn/EmbUtils/Message.c"
+	DEPS "gpiod;pthread;m"
+)
+
+# ════════════════════════════════════════════════════════════
 # demo_algo — 调试/算法测试
 
 add_custom_build(
