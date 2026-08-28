@@ -33,6 +33,7 @@ extern "C" {
 #include "motor/motor_ctrl.h"
 #include "imu/imu_source.h"
 #include "foot_pressure/FootPressureSensor.h"
+#include "barometer/barometer_source.h"
 #include "motor/motor_rt_worker.h"
 
 namespace stark_periph_manager_node {
@@ -56,6 +57,7 @@ public:
     StarkMotorCtrl*  GetCtrl()      { return m_ctrl.get(); }
     IImuSource*   GetImuSensor() { return m_imu_sensor; }
     FootPressureSensor* GetFootPressureSensor() { return m_foot_sensor; }
+    IBarometerSource* GetBarometerSensor() { return m_baro_sensor; }
 
     /* 配置 (从 config.json 读取, 或默认值) */
     uint32_t          GetHeartbeatTimeoutMs() const { return m_heartbeat_timeout_ms; }
@@ -120,6 +122,11 @@ private:
     std::string m_foot_uart_dev  = "/dev/ttyS7";
     int         m_foot_baud_rate = 460800;
     int         m_foot_timeout_ms = 10;
+
+    /* 气压计 (底层对象由 DeviceManager 持有, 这里只存指针) */
+    IBarometerSource* m_baro_sensor = nullptr;
+    BarometerConfig   m_baro_cfg;
+    bool        m_baro_enabled = true;
 
     /* 电机数量 (从 config.json 读取, ≤ STARK_MAX_MOTORS) */
     int          m_motor_count    = 2;

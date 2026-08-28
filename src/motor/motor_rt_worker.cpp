@@ -12,6 +12,7 @@
 #include "motor/motor_ctrl.h"
 #include "imu/imu_source.h"
 #include "foot_pressure/FootPressureSensor.h"
+#include "barometer/barometer_source.h"
 #include <log_helper/LogHelper.h>
 
 #include <cstring>
@@ -44,12 +45,14 @@ static inline uint64_t _rt_now_us()
 StarkRtWorker::StarkRtWorker(motor_hal_t* hal, stark_shm_t* shm,
                          StarkMotorCtrl* ctrl, IImuSource* imu_sensor,
                          FootPressureSensor* foot_sensor,
+                         IBarometerSource* baro_sensor,
                          int motor_count)
     : m_hal(hal)
     , m_shm(shm)
     , m_ctrl(ctrl)
     , m_imu_sensor(imu_sensor)
     , m_foot_sensor(foot_sensor)
+    , m_baro_sensor(baro_sensor)
     , m_report_divider(m_rt.report_divider)
     , m_report_enabled(false)
     , m_report_period_ms(5)
@@ -586,6 +589,14 @@ void StarkRtWorker::PublishFeedback()
         imu_valid = true;
     }
 
+    /* 读气压计一次, feedback_frame_t 和 PeriodicUploadData 共用 */
+    barometer_data_t baro_local;
+    bool baro_valid = false;
+    if (m_baro_sensor && m_baro_sensor->IsReady()) {
+        m_baro_sensor->Read(&baro_local);
+        baro_valid = true;
+    }
+
     /* 周期上报: 基于 RT 周期计数器, 不嵌套在 feedback_frame_t 分频内 */
     if (m_report_enabled && m_shm && m_hal) {
         uint64_t elapsed = m_cycle_count - m_periodic_last_cycle;
@@ -609,6 +620,9 @@ void StarkRtWorker::PublishFeedback()
                 d.acc_x       = imu_local.acc_x;
                 d.acc_y       = imu_local.acc_y;
                 d.acc_z       = imu_local.acc_z;
+            }
+            if (baro_valid) {
+                d.air_pressure = baro_local.pressure_hpa;
             }
 
             /* 双电机 */
@@ -855,8 +869,12 @@ void StarkRtWorker::PublishFeedback()
         memset(&fb->imu, 0, sizeof(fb->imu));
     }
 
-    /* 气压计: 硬件未接入, 保持全零 */
-    memset(&fb->baro, 0, sizeof(fb->baro));
+    /* 气压计: 读传感器缓存, 每周期写入 SHM */
+    if (baro_valid) {
+        fb->baro = baro_local;
+    } else {
+        memset(&fb->baro, 0, sizeof(fb->baro));
+    }
 
     /* 足底压力: 读传感器缓存, 每周期写入 SHM */
     if (m_foot_sensor && m_foot_sensor->IsReady()) {

@@ -28,6 +28,7 @@ namespace stark_periph_manager_node {
 class StarkMotorCtrl;
 class IImuSource;
 class FootPressureSensor;
+class IBarometerSource;
 
 struct RtConfig {
     int      priority         = 90;
@@ -48,6 +49,7 @@ public:
     StarkRtWorker(motor_hal_t* hal, stark_shm_t* shm,
                 StarkMotorCtrl* ctrl, IImuSource* imu_sensor,
                 FootPressureSensor* foot_sensor,
+                IBarometerSource* baro_sensor,
                 int motor_count);
     ~StarkRtWorker();
 
@@ -92,6 +94,7 @@ public:
     StarkMotorCtrl*       m_ctrl;
     IImuSource*         m_imu_sensor;
     FootPressureSensor* m_foot_sensor = nullptr;
+    IBarometerSource*   m_baro_sensor = nullptr;
 
     std::atomic<bool> m_running{false};
     std::thread       m_thread;

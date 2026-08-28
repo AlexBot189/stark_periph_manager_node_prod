@@ -9,6 +9,7 @@
 #include "framework/motor_canfd.h"
 #include "framework/imu_sensor_device.h"
 #include "framework/foot_pressure_sensor_device.h"
+#include "framework/barometer_device.h"
 #include "nlohmann/json.hpp"
 
 #include <cstring>
@@ -93,6 +94,23 @@ bool CanDispatcher::InitDispatcher()
         ECO_INFO_NEW("[CanDispatcher] FootPressure disabled (foot_pressure.enabled=false)");
     }
 
+    /* 气压计接入框架 (enabled 才注册) */
+    if (m_baro_enabled) {
+        nlohmann::json baro_entry;
+        baro_entry["name"]                      = "barometer";
+        baro_entry["driver"]                    = "barometer";
+        baro_entry["config"]["input_name"]      = m_baro_cfg.input_name;
+        baro_entry["config"]["sample_period_ms"] = m_baro_cfg.sample_period_ms;
+        baro_entry["config"]["osr_t"]           = m_baro_cfg.osr_t;
+        baro_entry["config"]["osr_p"]           = m_baro_cfg.osr_p;
+        baro_entry["config"]["odr"]             = m_baro_cfg.odr;
+        baro_entry["config"]["power_mode"]      = m_baro_cfg.power_mode;
+        baro_entry["config"]["sea_level_hpa"]   = m_baro_cfg.sea_level_hpa;
+        devices.push_back(baro_entry);
+    } else {
+        ECO_INFO_NEW("[CanDispatcher] Barometer disabled (barometer.enabled=false)");
+    }
+
     stark::DeviceManager::instance().loadDevices(devices);
 
     auto* motor_dev = dynamic_cast<stark::MotorCanfd*>(
@@ -118,6 +136,14 @@ bool CanDispatcher::InitDispatcher()
         m_foot_sensor = foot_dev ? foot_dev->sensor() : nullptr;
         if (!m_foot_sensor) {
             ECO_WARN_NEW("[CanDispatcher] FootPressure init failed, running without it");
+        }
+    }
+    if (m_baro_enabled) {
+        auto* baro_dev = dynamic_cast<stark::BarometerDevice*>(
+            stark::DeviceManager::instance().find("barometer"));
+        m_baro_sensor = baro_dev ? baro_dev->source() : nullptr;
+        if (!m_baro_sensor) {
+            ECO_WARN_NEW("[CanDispatcher] Barometer init failed, running without it");
         }
     }
 
@@ -193,6 +219,7 @@ bool CanDispatcher::DestroyDispatcher()
     m_ctrl.reset();
     m_imu_sensor = nullptr;
     m_foot_sensor = nullptr;
+    m_baro_sensor = nullptr;
 
     /* 关闭 SHM */
     if (m_shm) {
@@ -411,6 +438,19 @@ bool CanDispatcher::LoadMotorConfig()
                 m_foot_uart_dev   = fp.value("uart_dev",    std::string("/dev/ttyS7"));
                 m_foot_baud_rate  = fp.value("baud_rate",   460800);
                 m_foot_timeout_ms = fp.value("timeout_ms",  10);
+            }
+
+            /* barometer 子配置 */
+            if (s.contains("barometer")) {
+                auto& baro = s["barometer"];
+                m_baro_enabled          = baro.value("enabled", true);
+                m_baro_cfg.input_name   = baro.value("input_name", std::string("bmp5xy"));
+                m_baro_cfg.sample_period_ms = baro.value("sample_period_ms", 50u);
+                m_baro_cfg.osr_t        = baro.value("osr_t", 6);
+                m_baro_cfg.osr_p        = baro.value("osr_p", 2);
+                m_baro_cfg.odr          = baro.value("odr", 15);
+                m_baro_cfg.power_mode   = baro.value("power_mode", 1);
+                m_baro_cfg.sea_level_hpa = baro.value("sea_level_hpa", 1013.25f);
             }
         }
 

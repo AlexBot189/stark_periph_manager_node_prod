@@ -542,6 +542,7 @@ static void run_stat_loop(stark_client_t* c)
         motor_data_t fb1 = stark_fb(c, 1);
         motor_data_t fb2 = stark_fb(c, 2);
         imu_data_t imu = stark_imu(c);
+        barometer_data_t baro = stark_baro(c);
 
         printf("[stat] M1: pos=%.1f deg vel=%d RPM cur=%d mA temp=%.1f C  "
                "M2: pos=%.1f deg vel=%d RPM cur=%d mA tq=%.2fN.m  "
@@ -550,6 +551,9 @@ static void run_stat_loop(stark_client_t* c)
                counts_to_deg(fb2.position), fb2.velocity, fb2.current_iq,
                (float)fb2.torque_nm * 0.05f,
                imu.yaw, imu.pitch, imu.roll);
+
+        printf("[stat] BARO: press=%.2fhPa temp=%.1fC alt=%.2fm\n",
+               baro.pressure_hpa, baro.temperature_c, baro.altitude_m);
 
         usleep(200000);  /* 5Hz */
     }

@@ -102,6 +102,7 @@ int main(int argc, char** argv)
                                   g_dispatcher->GetCtrl(),
                                   g_dispatcher->GetImuSensor(),
                                   g_dispatcher->GetFootPressureSensor(),
+                                  g_dispatcher->GetBarometerSensor(),
                                   motor_count);
 
     shm->algo_heartbeat_timeout_ms = g_dispatcher->GetHeartbeatTimeoutMs();
