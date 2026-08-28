@@ -238,6 +238,11 @@ struct emd_gaf {
     /* 原始数据回调 (notify_raw_data 等价) */
     emd_raw_data_cb_t raw_data_cb;
     void              *raw_data_user;
+
+    /* 融合数据回调 (GAF ODR, frame_complete 时触发) */
+    emd_fused_data_cb_t fused_data_cb;
+    void                *fused_data_user;
+    int                  fused_updated;
 };
 
 /* 内部函数声明 */
@@ -574,6 +579,14 @@ void emd_gaf_set_raw_data_callback(emd_gaf_t *handle,
     if (!handle) return;
     handle->raw_data_cb   = cb;
     handle->raw_data_user = user_data;
+}
+
+void emd_gaf_set_fused_data_callback(emd_gaf_t *handle,
+                                     emd_fused_data_cb_t cb, void *user_data)
+{
+    if (!handle) return;
+    handle->fused_data_cb   = cb;
+    handle->fused_data_user = user_data;
 }
 
 /*
@@ -1105,6 +1118,7 @@ static void _sensor_event_cb(inv_imu_sensor_event_t *event)
                     (int32_t)g->edmp_outputs.raw_mag[2] * RAW_MAG_SCALE - g->edmp_outputs.mag_bias_q16[2];
             }
 
+            g->fused_updated = 1;
             memset(&gaf_outputs, 0, sizeof(gaf_outputs));
         }
     }
@@ -1147,6 +1161,14 @@ static void _sensor_event_cb(inv_imu_sensor_event_t *event)
                     g->mount_axis, g->mount_sign);
     g->output_updated = 1;
     pthread_mutex_unlock(&g->output_mutex);
+
+    /* 融合数据回调 (GAF ODR, frame_complete 时触发) */
+    if (g->fused_updated) {
+        g->fused_updated = 0;
+        if (g->fused_data_cb) {
+            g->fused_data_cb(&g->cached_output, g->fused_data_user);
+        }
+    }
 
     /* 更新原始 IMU 缓存 */
     pthread_mutex_lock(&g->output_mutex);

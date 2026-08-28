@@ -6,7 +6,7 @@
  * 后台线程轮询 sysfs, 解析气压(Pa)/温度(°C), 换算 hPa + 计算海拔, 缓存。
  */
 
-#include "barometer/barometer_sensor.h"
+#include "sensor/barometer/barometer_sensor.h"
 
 #include <cstdio>
 #include <cstring>
@@ -133,13 +133,12 @@ void BarometerSensor::_ReaderThread()
                 float altitude_m = 44330.0f * (1.0f -
                     powf(pressure_hpa / m_cfg.sea_level_hpa, 1.0f / 5.255f));
 
-                {
-                    std::lock_guard<std::mutex> lk(m_lock);
-                    m_data.pressure_hpa  = pressure_hpa;
-                    m_data.temperature_c = temperature_c;
-                    m_data.altitude_m    = altitude_m;
-                    m_data.timestamp_us  = ts_us;
-                }
+                barometer_data_t d;
+                d.pressure_hpa  = pressure_hpa;
+                d.temperature_c = temperature_c;
+                d.altitude_m    = altitude_m;
+                d.timestamp_us  = ts_us;
+                m_data.store(d);
                 m_ready.store(true, std::memory_order_release);
             }
         }
@@ -151,8 +150,7 @@ void BarometerSensor::_ReaderThread()
 void BarometerSensor::Read(barometer_data_t* out) const
 {
     if (!out) return;
-    std::lock_guard<std::mutex> lk(m_lock);
-    *out = m_data;
+    m_data.load(*out);
 }
 
 }  /* namespace stark_periph_manager_node */

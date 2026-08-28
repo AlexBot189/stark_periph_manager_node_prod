@@ -10,9 +10,9 @@
 #include "motor/motor_rt_worker.h"
 #include "utils/rt_log.h"
 #include "motor/motor_ctrl.h"
-#include "imu/imu_source.h"
-#include "foot_pressure/FootPressureSensor.h"
-#include "barometer/barometer_source.h"
+#include "sensor/imu/imu_source.h"
+#include "sensor/foot_pressure/FootPressureSensor.h"
+#include "sensor/barometer/barometer_source.h"
 #include <log_helper/LogHelper.h>
 
 #include <cstring>

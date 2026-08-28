@@ -82,29 +82,8 @@ add_custom_build(
 )
 
 # ════════════════════════════════════════════════════════════
-# libimu_hal.so — IMU 传感器驱动
-
-add_custom_build(
-	NAME imu_hal
-	TYPE shared
-	SRCS
-		"${IH_DIR}/emd_gaf.c"
-		";${IH_DIR}/invn_mag_ict1531x.c"
-		";${IH_DIR}/driver/icm45608/imu/inv_imu_driver.c"
-		";${IH_DIR}/driver/icm45608/imu/inv_imu_driver_advanced.c"
-		";${IH_DIR}/driver/icm45608/imu/inv_imu_edmp.c"
-		";${IH_DIR}/driver/icm45608/imu/inv_imu_edmp_wearable.c"
-		";${IH_DIR}/driver/icm45608/imu/inv_imu_edmp_mrm.c"
-		";${IH_DIR}/driver/icm45608/imu/inv_imu_transport.c"
-		";${IH_DIR}/driver/icm45608/imu/inv_imu_i2cm.c"
-		";${IH_DIR}/driver/icm45608/imu/inv_imu_selftest.c"
-		";${IH_DIR}/driver/icm45608/imu/sif_classifier_ir.c"
-		";${IH_DIR}/driver/icm45608/imu/sif_feature_extract_ir.c"
-		";${IH_DIR}/driver/Ict1531x/Ict1531x.c"
-		";${IH_DIR}/hal/emd_hal.c"
-		";${IH_DIR}/tools/Invn/EmbUtils/Message.c"
-	DEPS "gpiod;pthread;m"
-)
+# IMU 传感器驱动 — 源码直接编译进主目标 (eco_build 扫描 src/sensor/imu_hal)
+#   不再单独建 libimu_hal.so；排除 demo/example (带 main, 与节点冲突)
 
 # ════════════════════════════════════════════════════════════
 # demo_algo — 调试/算法测试
@@ -116,6 +95,6 @@ add_custom_build(
 	DEPS "rt;pthread;m"
 )
 
-target_link_libraries(${PROJECT_NAME} motor_hal imu_hal)
+target_link_libraries(${PROJECT_NAME} motor_hal)
 
 include(eco_install)

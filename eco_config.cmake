@@ -39,7 +39,8 @@ set(IGNORE_SOURCES_FOLDER
 	"src/doc"
 	"src/config"
 	"src/motor_hal"
-	"src/imu_hal"
+	"src/sensor/imu_hal/demo"
+	"src/sensor/imu_hal/example"
 )
 if(NOT ENABLE_ROS)
 	list(APPEND IGNORE_SOURCES_FOLDER "src/ros")
@@ -57,7 +58,7 @@ set(LOCAL_SRC_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(LOCAL_INCLUDE_PATH "${LOCAL_SRC_PATH}")
 
 set(MH_DIR "${LOCAL_SRC_PATH}/motor_hal")
-set(IH_DIR "${LOCAL_SRC_PATH}/imu_hal")
+set(IH_DIR "${LOCAL_SRC_PATH}/sensor/imu_hal")
 set(LOG_DIR "${LOCAL_SRC_PATH}/log_helper")
 
 # 平台配置

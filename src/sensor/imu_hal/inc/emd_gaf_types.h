@@ -78,6 +78,14 @@ typedef struct {
  */
 typedef void (*emd_raw_data_cb_t)(const emd_raw_sensor_t *data, void *user_data);
 
+/**
+ * @brief 融合数据回调 (GAF ODR, frame_complete 时触发)
+ *
+ * 在 sensor_event_cb 内、融合输出更新后调用。
+ * 回调中应快速拷贝数据, 不要做耗时操作。
+ */
+typedef void (*emd_fused_data_cb_t)(const emd_output_t *output, void *user_data);
+
 #ifdef __cplusplus
 }
 #endif

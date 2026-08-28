@@ -6,7 +6,7 @@
  *
  * Copyright (c) 2026 zhiqiang.yang
  */
-#include "imu/imu_sensor.h"
+#include "sensor/imu/imu_sensor.h"
 
 #include <cstring>
 #include <cstdio>
@@ -20,25 +20,23 @@ namespace stark_periph_manager_node {
 
 ImuHALSensor::ImuHALSensor()
 {
-    pthread_mutex_init(&m_raw_mutex, NULL);
-    pthread_mutex_init(&m_fused_mutex, NULL);
-    memset(&m_cached_raw, 0, sizeof(m_cached_raw));
-    memset(&m_cached_fused, 0, sizeof(m_cached_fused));
 }
 
 ImuHALSensor::~ImuHALSensor()
 {
     Deinit();
-    pthread_mutex_destroy(&m_raw_mutex);
-    pthread_mutex_destroy(&m_fused_mutex);
 }
 
 void ImuHALSensor::_RawDataCb(const emd_raw_sensor_t *data, void *user_data)
 {
     ImuHALSensor *self = static_cast<ImuHALSensor*>(user_data);
-    pthread_mutex_lock(&self->m_raw_mutex);
-    self->m_cached_raw = *data;
-    pthread_mutex_unlock(&self->m_raw_mutex);
+    self->m_raw.store(*data);
+}
+
+void ImuHALSensor::_FusedDataCb(const emd_output_t *output, void *user_data)
+{
+    ImuHALSensor *self = static_cast<ImuHALSensor*>(user_data);
+    self->m_fused.store(*output);
 }
 
 bool ImuHALSensor::Init(const ImuConfig& cfg)
@@ -96,6 +94,9 @@ bool ImuHALSensor::Init(const ImuConfig& cfg)
     /* 4. 注册原始数据回调 (notify_raw_data 等价, sensor ODR) */
     emd_gaf_set_raw_data_callback((emd_gaf_t*)m_handle, _RawDataCb, this);
 
+    /* 5. 注册融合数据回调 (GAF ODR, frame_complete 时触发) */
+    emd_gaf_set_fused_data_callback((emd_gaf_t*)m_handle, _FusedDataCb, this);
+
     printf("[ImuHALSensor] initialized: %s %s:%u mode=%d\n",
            dev_name, cfg.gpio_chip.c_str(), cfg.gpio_line, cfg.op_mode);
     return true;
@@ -120,41 +121,22 @@ void ImuHALSensor::Read(imu_data_t* out) const
 
     if (!m_handle) return;
 
-    /* 原始 accel/gyro/temp 从 notify_raw_data 回调缓冲读取 (sensor ODR) */
-    pthread_mutex_lock(&m_raw_mutex);
-    out->acc_x       = m_cached_raw.accel_x;
-    out->acc_y       = m_cached_raw.accel_y;
-    out->acc_z       = m_cached_raw.accel_z;
-    out->gyro_x      = m_cached_raw.gyro_x;
-    out->gyro_y      = m_cached_raw.gyro_y;
-    out->gyro_z      = m_cached_raw.gyro_z;
-    out->temp_c      = m_cached_raw.temp_c;
-    out->timestamp_us = m_cached_raw.timestamp_us;
-    pthread_mutex_unlock(&m_raw_mutex);
+    /* 原始 accel/gyro/temp (回调线程写, 顺序锁读) */
+    emd_raw_sensor_t raw;
+    m_raw.load(raw);
+    out->acc_x       = raw.accel_x;
+    out->acc_y       = raw.accel_y;
+    out->acc_z       = raw.accel_z;
+    out->gyro_x      = raw.gyro_x;
+    out->gyro_y      = raw.gyro_y;
+    out->gyro_z      = raw.gyro_z;
+    out->temp_c      = raw.temp_c;
+    out->timestamp_us = raw.timestamp_us;
 
-    /* 融合数据 quat/mag/heading 从 emd_gaf_get_output 读取 (GAF ODR, 保留最近有效值) */
+    /* 融合数据 quat/mag/heading (回调线程写, 顺序锁读, 无新数据保留上次有效值) */
     emd_output_t imu;
-    int ret = emd_gaf_get_output((emd_gaf_t*)m_handle, &imu);
+    m_fused.load(imu);
 
-    if (ret == 0) {
-        /* 有新融合数据, 更新缓存 */
-        pthread_mutex_lock(&m_fused_mutex);
-        m_cached_fused = imu;
-        m_fused_valid = true;
-        pthread_mutex_unlock(&m_fused_mutex);
-    } else {
-        /* 无新数据, 从缓存返回上次有效值 */
-        pthread_mutex_lock(&m_fused_mutex);
-        if (m_fused_valid) {
-            imu = m_cached_fused;
-            pthread_mutex_unlock(&m_fused_mutex);
-        } else {
-            pthread_mutex_unlock(&m_fused_mutex);
-            return; /* 从未收到融合数据, accel/gyro 已填充 */
-        }
-    }
-
-    /* 9轴融合输出 */
     out->quat_w      = imu.quat_w;
     out->quat_x      = imu.quat_x;
     out->quat_y      = imu.quat_y;

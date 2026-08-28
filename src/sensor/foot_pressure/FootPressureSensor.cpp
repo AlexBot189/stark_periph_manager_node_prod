@@ -2,11 +2,11 @@
  * FootPressureSensor.cpp -- 足底压力传感器实现
  * Copyright (c) 2026 zhiqiang.yang
  *
- * 串口线程: 阻塞 read → 环形缓冲 → 逐帧解析 → mutex 缓存
+ * 串口线程: 阻塞 read → 环形缓冲 → 逐帧解析 → 顺序锁缓存
  * 帧解析: 移植 BatteryFrame::Unpack 模式
  */
-#include "foot_pressure/FootPressureSensor.h"
-#include "foot_pressure/FootPressureProtocol.h"
+#include "sensor/foot_pressure/FootPressureSensor.h"
+#include "sensor/foot_pressure/FootPressureProtocol.h"
 
 #include <log_helper/LogHelper.h>
 #include <cstring>
@@ -21,7 +21,6 @@ namespace stark_periph_manager_node {
 
 FootPressureSensor::FootPressureSensor()
 {
-    memset(&m_cached, 0, sizeof(m_cached));
 }
 
 FootPressureSensor::~FootPressureSensor()
@@ -151,9 +150,7 @@ void FootPressureSensor::Read(foot_pressure_data_t* out) const
 {
     if (!out) return;
 
-    pthread_mutex_lock(&m_mutex);
-    memcpy(out, &m_cached, sizeof(foot_pressure_data_t));
-    pthread_mutex_unlock(&m_mutex);
+    m_cached.load(*out);
 }
 
 /* ---------- IsOnline ---------- */
@@ -345,10 +342,8 @@ void FootPressureSensor::_ReaderThread()
                 continue;
             }
 
-            /* 写入缓存 */
-            pthread_mutex_lock(&m_mutex);
-            memcpy(&m_cached, &fp, sizeof(foot_pressure_data_t));
-            pthread_mutex_unlock(&m_mutex);
+            /* 写入缓存 (无锁顺序锁) */
+            m_cached.store(fp);
 
             m_frame_count++;
 

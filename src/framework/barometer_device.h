@@ -7,7 +7,7 @@
 #include <string>
 
 #include "framework/device.h"
-#include "barometer/barometer_sensor.h"
+#include "sensor/barometer/barometer_sensor.h"
 
 namespace stark {
 

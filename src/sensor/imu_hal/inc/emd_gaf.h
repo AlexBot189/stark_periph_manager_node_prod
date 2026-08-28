@@ -151,6 +151,19 @@ void emd_gaf_set_raw_data_callback(emd_gaf_t *handle,
                                    emd_raw_data_cb_t cb, void *user_data);
 
 /**
+ * @brief 注册融合数据回调
+ *
+ * 在 emd_gaf_start 之前调用。回调在 sensor_event_cb 内触发,
+ * 以 GAF ODR (frame_complete) 速率提供 quat/mag/heading 融合数据。
+ *
+ * @param handle    实例句柄
+ * @param cb        回调函数指针, NULL 取消注册
+ * @param user_data 用户自定义参数, 回调时透传
+ */
+void emd_gaf_set_fused_data_callback(emd_gaf_t *handle,
+                                     emd_fused_data_cb_t cb, void *user_data);
+
+/**
  * @brief 查询后台线程状态
  * @return 1 运行中，0 已停止
  */

@@ -7,7 +7,7 @@
 #include <string>
 
 #include "framework/device.h"
-#include "foot_pressure/FootPressureSensor.h"
+#include "sensor/foot_pressure/FootPressureSensor.h"
 
 namespace stark {
 

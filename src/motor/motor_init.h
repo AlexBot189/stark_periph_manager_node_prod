@@ -31,9 +31,9 @@ extern "C" {
 }
 
 #include "motor/motor_ctrl.h"
-#include "imu/imu_source.h"
-#include "foot_pressure/FootPressureSensor.h"
-#include "barometer/barometer_source.h"
+#include "sensor/imu/imu_source.h"
+#include "sensor/foot_pressure/FootPressureSensor.h"
+#include "sensor/barometer/barometer_source.h"
 #include "motor/motor_rt_worker.h"
 
 namespace stark_periph_manager_node {

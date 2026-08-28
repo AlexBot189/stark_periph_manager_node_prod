@@ -13,9 +13,9 @@
 #include <atomic>
 #include <thread>
 #include <string>
-#include <mutex>
 
-#include "barometer/barometer_source.h"
+#include "sensor/barometer/barometer_source.h"
+#include "utils/seqlock.h"
 
 namespace stark_periph_manager_node {
 
@@ -46,7 +46,7 @@ public:
     /*
      * 读取最新数据 (非阻塞)
      *
-     * 从 mutex 保护的缓存读取, 不触发 I/O。
+     * 从顺序锁保护的缓存读取, 不触发 I/O。
      * 未就绪时 out 为全零。
      */
     void Read(barometer_data_t* out) const override;
@@ -68,8 +68,7 @@ private:
     std::atomic<bool> m_ready{false};
     std::thread       m_thread;
 
-    mutable std::mutex m_lock;
-    barometer_data_t   m_data{};
+    Seqlock<barometer_data_t> m_data;
 };
 
 }  /* namespace stark_periph_manager_node */

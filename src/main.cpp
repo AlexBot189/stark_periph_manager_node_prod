@@ -24,7 +24,7 @@ extern "C" {
 #include "motor/motor_rt_worker.h"
 #include "motor/motor_state.h"
 #include "motor/motor_context.h"
-#include "imu/imu_sensor.h"
+#include "sensor/imu/imu_sensor.h"
 #include "utils/rt_log.h"
 #include "utils/factory.h"
 #include "main_loop/main_loop.h"

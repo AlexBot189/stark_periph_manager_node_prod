@@ -6,15 +6,14 @@
  *
  * 双通道数据:
  *   - accel/gyro/temp: 通过 notify_raw_data 回调以 sensor ODR 更新
- *   - quat/mag/heading: 通过 emd_gaf_get_output 以 GAF ODR 更新 (保留最近有效值)
+ *   - quat/mag/heading: 通过 fused_data 回调以 GAF ODR 更新 (frame_complete)
  *
  * Copyright (c) 2026 zhiqiang.yang
  */
 #pragma once
 
-#include <pthread.h>
-
-#include "imu/imu_source.h"
+#include "sensor/imu/imu_source.h"
+#include "utils/seqlock.h"
 
 struct emd_gaf; /* opaque, defined in emd_gaf.h */
 
@@ -40,7 +39,7 @@ public:
     /*
      * 初始化 IMU HAL
      *
-     * 创建 emd_gaf 实例并启动后台采集线程。
+     * 创建 emd_gaf 实例并启动后台采集线程 + 融合数据轮询线程。
      * 失败时 handle 保持 NULL，Read() 返回全零，不影响系统运行。
      *
      * @param cfg IMU 配置 (driver/interface/gpio/op_mode 等)
@@ -58,7 +57,7 @@ public:
     /*
      * 读取最新融合数据 (非阻塞)
      *
-     * 从 libimu_hal 后台线程缓存中读取，不触发 I/O。
+     * 从顺序锁保护的缓存读取，不触发 I/O、不拿锁。
      * 硬件未初始化时 out 清零。
      *
      * @param out [out] IMU 数据结构体
@@ -73,16 +72,14 @@ public:
 private:
     emd_gaf* m_handle = nullptr; /* emd_gaf_t*, 不透明指针 */
 
-    /* 原始数据回调缓冲 (sensor ODR, 回调线程写入, Read 线程读取) */
-    mutable pthread_mutex_t m_raw_mutex;
-    emd_raw_sensor_t        m_cached_raw;
+    /* 原始数据缓存 (回调线程写, RT 线程读) */
+    Seqlock<emd_raw_sensor_t> m_raw;
 
-    /* 融合数据缓存 (GAF ODR, 无新数据时保留上次有效值) */
-    mutable pthread_mutex_t m_fused_mutex;
-    mutable emd_output_t    m_cached_fused;
-    mutable bool            m_fused_valid = false;
+    /* 融合数据缓存 (回调线程写, RT 线程读) */
+    Seqlock<emd_output_t> m_fused;
 
     static void _RawDataCb(const emd_raw_sensor_t *data, void *user_data);
+    static void _FusedDataCb(const emd_output_t *output, void *user_data);
 };
 
 } /* namespace stark_periph_manager_node */

@@ -7,7 +7,7 @@
 #include <string>
 
 #include "framework/device.h"
-#include "imu/imu_sensor.h"
+#include "sensor/imu/imu_sensor.h"
 
 namespace stark {
 

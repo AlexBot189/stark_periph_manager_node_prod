@@ -12,11 +12,9 @@
 #include <atomic>
 #include <thread>
 #include <cstdint>
-#include <pthread.h>
 
-extern "C" {
 #include "stark_shm.h"
-}
+#include "utils/seqlock.h"
 
 namespace stark_periph_manager_node {
 
@@ -51,7 +49,7 @@ public:
     /*
      * 读取最新足底压力数据 (非阻塞)
      *
-     * 从 mutex 保护的缓存中读取, 不触发 I/O。
+     * 从顺序锁保护的缓存中读取, 不触发 I/O。
      * 硬件未初始化或离线时 out 清零。
      *
      * @param out [out] 足底压力数据结构体
@@ -104,10 +102,9 @@ private:
     std::thread          m_thread;
     int                  m_timeout_ms = 10;
 
-    /* 缓存保护 */
-    mutable pthread_mutex_t m_mutex = PTHREAD_MUTEX_INITIALIZER;
-    foot_pressure_data_t    m_cached;
-    std::atomic<bool>       m_ready{false};
+    /* 缓存保护 (无锁顺序锁) */
+    Seqlock<foot_pressure_data_t> m_cached;
+    std::atomic<bool>             m_ready{false};
 
     /* 帧统计 */
     uint32_t m_frame_count     = 0;
