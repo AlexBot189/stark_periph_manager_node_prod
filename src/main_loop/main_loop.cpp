@@ -288,25 +288,14 @@ static void poll_common(motor_hal_t* hal, stark_shm_t* shm, uint8_t motor_count)
 
 /*
  * poll_booting — BOOTING 状态逻辑
- *   电机全在线, 进入 READY, 懒启动 RT 线程和 SYNC
+ *   RT worker + 周期上报无条件启动(不依赖电机), SYNC 及 READY 转移依赖电机在线.
  */
 
 static void poll_booting(stark_shm_t* shm, int motor_count,
                          bool enable_rt, bool enable_sync, bool& sync_started)
 {
-    if (!any_motor_online(shm, motor_count)) {
-        g_boot_first_online_us = 0;
-        return;
-    }
-
-    /* 记录首个电机上线时刻 */
-    if (g_boot_first_online_us == 0) {
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        g_boot_first_online_us = (uint64_t)ts.tv_sec * 1000000UL + (uint64_t)ts.tv_nsec / 1000UL;
-    }
-
-    /* 至少1个电机在线: 启动 RT 线程和 SYNC */
+    /* RT worker 与周期上报不依赖电机在线, 无条件启动,
+     * 使无电机时 demo_algo report 仍能读到 IMU/气压等传感器数据. */
     if (g_rt_worker && !g_rt_worker->IsRunning()) {
         g_rt_worker->Start();
         ECO_INFO_NEW("[main] RT worker started (1KHz, {})",
@@ -319,6 +308,18 @@ static void poll_booting(stark_shm_t* shm, int motor_count,
         g_report_started = true;
         ECO_INFO_NEW("[main] periodic report enabled, period={}ms",
                      g_ctx->report_period_ms);
+    }
+
+    if (!any_motor_online(shm, motor_count)) {
+        g_boot_first_online_us = 0;
+        return;
+    }
+
+    /* 记录首个电机上线时刻 */
+    if (g_boot_first_online_us == 0) {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        g_boot_first_online_us = (uint64_t)ts.tv_sec * 1000000UL + (uint64_t)ts.tv_nsec / 1000UL;
     }
 
     if (!sync_started) {

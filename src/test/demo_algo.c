@@ -451,11 +451,11 @@ static void run_report_loop(stark_client_t* c)
         printf("IMU  gyro(x=%.2f y=%.2f z=%.2f)dps  "
                "quat(w=%.4f x=%.4f y=%.4f z=%.4f)  "
                "euler(roll=%.1f pitch=%.1f yaw=%.1f)deg  "
-               "acc(x=%.3f y=%.3f z=%.3f)g  press=%.1fhPa\n",
+  	       "acc(x=%.3f y=%.3f z=%.3f)g  press=%.1fPa  alt=%.2fm\n",
                d->gyro_dps_x, d->gyro_dps_y, d->gyro_dps_z,
                d->quat_w, d->quat_x, d->quat_y, d->quat_z,
                d->gyro_roll, d->gyro_pitch, d->gyro_yaw,
-               d->acc_x, d->acc_y, d->acc_z, d->air_pressure);
+	       d->acc_x, d->acc_y, d->acc_z, d->air_pressure, d->altitude_m);
 
         /* M1 */
         printf("M1   vel=%7dRPM  ang=%6.1fdeg  Iq=%5dmA  "
@@ -733,6 +733,9 @@ int main(int argc, char** argv)
             usleep(100000);
         }
         printf("[init] 校准完成, 电机在线: %d %d\n", stark_online(&c, 1), stark_online(&c, 2));
+    } else if (strcmp(mode, "report") == 0) {
+        /* report 只读周期上报数据(IMU/气压/足压等), 不依赖电机在线 */
+        printf("[init] report 模式: 无需等待电机在线\n");
     } else {
         printf("[init] 等待电机在线...\n");
         while (!stark_online(&c, 1) && !stark_online(&c, 2)) {
