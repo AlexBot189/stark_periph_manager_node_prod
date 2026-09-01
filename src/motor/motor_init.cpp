@@ -451,6 +451,8 @@ bool CanDispatcher::LoadMotorConfig()
                 m_baro_cfg.odr          = baro.value("odr", 15);
                 m_baro_cfg.power_mode   = baro.value("power_mode", 1);
                 m_baro_cfg.sea_level_hpa = baro.value("sea_level_hpa", 1013.25f);
+		m_baro_cfg.iir_p        = baro.value("iir_p", 3);
+		m_baro_cfg.iir_t        = baro.value("iir_t", 3);
             }
         }
 

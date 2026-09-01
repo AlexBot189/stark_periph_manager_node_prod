@@ -338,6 +338,7 @@ static std::string serialize_to_json(stark_shm_t *shm, const WebServer::CmdTrack
         "\"imu_quat_y\":%.4f,"
         "\"imu_quat_z\":%.4f,"
         "\"imu_press\":%.1f,"
+	"\"imu_alt\":%.2f,"
         "\"spi_torque\":%.1f,"
         "\"spi_valid\":%u,"
         "\"spi_torque2\":%.1f,"
@@ -416,6 +417,7 @@ static std::string serialize_to_json(stark_shm_t *shm, const WebServer::CmdTrack
         d->gyro_dps_x, d->gyro_dps_y, d->gyro_dps_z,
         d->quat_w, d->quat_x, d->quat_y, d->quat_z,
         d->air_pressure,
+	d->altitude_m,
         d->spi_torque,
         d->spi_valid,
         d->spi_torque_left,

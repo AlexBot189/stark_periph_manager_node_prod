@@ -249,6 +249,7 @@ typedef struct {
     float    acc_y;            /* 加速度 Y, g                                */
     float    acc_z;            /* 加速度 Z, g                                */
     float    air_pressure;     /* 气压, hPa (预留)                           */
+    float    altitude_m;      /* 海拔, m*/
 
     /* 右电机 (ID=1) */
     int32_t  RealtimeVelocity;      /* 实时转速, RPM×10                        */

@@ -21,6 +21,8 @@ bool BarometerDevice::initialize(const nlohmann::json& config)
     cfg.odr              = config.value("odr", 15);
     cfg.power_mode       = config.value("power_mode", 1);
     cfg.sea_level_hpa    = config.value("sea_level_hpa", 1013.25f);
+    cfg.iir_p            = config.value("iir_p", 3);
+    cfg.iir_t            = config.value("iir_t", 3);
 
     return m_baro.Init(cfg);
 }

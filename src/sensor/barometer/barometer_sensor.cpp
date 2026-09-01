@@ -93,6 +93,20 @@ bool BarometerSensor::Init(const BarometerConfig& cfg)
     _WriteSysfs(m_sysfs_dir + "/power_mode", std::to_string(cfg.power_mode));
     usleep(50000);
 
+    /* IIR 滤波配置 (写 iir_config sysfs)
+     * 格式: shdw_set_iir_t shdw_set_iir_p iir_flush_forced_en set_iir_t set_iir_p
+     * 0=bypass, 1~7=coeff(1,3,7,15,31,63,127) */
+    if (cfg.iir_p > 0 || cfg.iir_t > 0) {
+	    char iir_buf[64];
+	    snprintf(iir_buf, sizeof(iir_buf), "%d %d 0 %d %d",
+			    cfg.iir_t > 0 ? 1 : 0,   /* shdw_set_iir_t */
+			    cfg.iir_p > 0 ? 1 : 0,   /* shdw_set_iir_p */
+			    cfg.iir_t,                /* set_iir_t */
+			    cfg.iir_p);               /* set_iir_p */
+	    _WriteSysfs(m_sysfs_dir + "/iir_config", iir_buf);
+	    usleep(20000);
+    }
+
     m_running.store(true, std::memory_order_release);
     m_thread = std::thread(&BarometerSensor::_ReaderThread, this);
     return true;
@@ -127,12 +141,11 @@ void BarometerSensor::_ReaderThread()
                 uint64_t ts_us = (uint64_t)ts.tv_sec * 1000000UL +
                                  (uint64_t)ts.tv_nsec / 1000UL;
 
-                float pressure_hpa = (float)press_pa / 100.0f;
+                float pressure_hpa = (float)press_pa;
                 float temperature_c = (float)temp_c;
                 /* 标准大气压测高公式 */
-                float altitude_m = 44330.0f * (1.0f -
-                    powf(pressure_hpa / m_cfg.sea_level_hpa, 1.0f / 5.255f));
 
+		float altitude_m = 44330.0f * (1.0f - powf(pressure_hpa / (m_cfg.sea_level_hpa * 100.0f), 1.0f / 5.255f));
                 barometer_data_t d;
                 d.pressure_hpa  = pressure_hpa;
                 d.temperature_c = temperature_c;

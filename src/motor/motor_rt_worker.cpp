@@ -623,6 +623,7 @@ void StarkRtWorker::PublishFeedback()
             }
             if (baro_valid) {
                 d.air_pressure = baro_local.pressure_hpa;
+		d.altitude_m  = baro_local.altitude_m;
             }
 
             /* 双电机 */

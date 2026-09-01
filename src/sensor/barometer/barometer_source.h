@@ -24,6 +24,8 @@ struct BarometerConfig {
     int         odr              = 15;          /* ODR 枚举 (0=240Hz ... 31=0.125Hz) */
     int         power_mode       = 1;           /* 0=standby 1=normal 2=forced 3=continuous */
     float       sea_level_hpa    = 1013.25f;    /* 海平面气压基准 (算海拔用) */
+    int         iir_p            = 3;           /* 气压 IIR 滤波系数 (0=bypass 1~7, 默认3=coeff7) */
+    int         iir_t            = 3;           /* 温度 IIR 滤波系数 (0=bypass 1~7, 默认3=coeff7) */
 };
 
 /* 气压计数据源接口 */
