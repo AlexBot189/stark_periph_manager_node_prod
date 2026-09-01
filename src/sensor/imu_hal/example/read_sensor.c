@@ -5,7 +5,14 @@
  * @brief IMU HAL 使用示例 — 读取 ICM45608 9 轴融合数据
  *
  * 链接 libimu_hal.so。
- * 用法: ./read_sensor [-i /dev/i2c-3] [-g gpiochip4] [-l 2] [-m 5] [-x Z,-1,X,-1,Y,1]
+ * 支持通过命令行参数选择 I2C 或 SPI 总线接口。
+ *
+ * 用法 (I2C, 默认):
+ *   ./read_sensor [-i /dev/i2c-3] [-g gpiochip4] [-l 2] [-m 5] [-x Z,-1,X,-1,Y,1]
+ *
+ * 用法 (SPI):
+ *   ./read_sensor -b spi [-s /dev/spidev0.0] [-p 8000000] [-o 0]
+ *                 [-g gpiochip4] [-l 2] [-m 5] [-x Z,-1,X,-1,Y,1]
  *
  * Copyright (c) 2026 zhiqiang.yang
  */
@@ -38,14 +45,19 @@ static void sig_handler(int sig)
 static void usage(const char *prog)
 {
     printf("Usage: %s [options]\n", prog);
+    printf("  -b <type>   bus type      i2c (default) | spi\n");
     printf("  -i <dev>     I2C device   (default: /dev/i2c-3)\n");
+    printf("  -s <dev>     SPI device   (default: /dev/spidev0.0)\n");
+    printf("  -p <hz>      SPI speed Hz (default: 8000000)\n");
+    printf("  -o <mode>    SPI mode 0-3 (default: 0)\n");
     printf("  -g <chip>    GPIO chip    (default: gpiochip4)\n");
     printf("  -l <line>    GPIO line    (default: 2)\n");
     printf("  -m <mode>    opmode 0-9   (default: 5)\n");
     printf("  -x <map>     mount map    (default: Z,-1,X,-1,Y,1)\n");
     printf("  -h           help\n\n");
     printf("mount map: robot_x,robot_x_sign,robot_y,robot_y_sign,robot_z,robot_z_sign\n");
-    printf("  axis ∈ {X,Y,Z} (取芯片对应轴), sign ∈ {1,-1}\n");
+    printf("  axis {X,Y,Z} (取芯片对应轴), sign {1,-1}\n");
+
     printf("Operation modes:\n");
     printf("  0: HRC 200Hz, MAG 100Hz\n");
     printf("  1: HRC 100Hz, MAG 50Hz\n");
@@ -89,7 +101,11 @@ static int parse_mount(const char *s, int8_t mount_axis[3], int8_t mount_sign[3]
 
 int main(int argc, char *argv[])
 {
+    const char *bus_type   = "i2c";
     const char *i2c_dev    = "/dev/i2c-3";
+    const char *spi_dev    = "/dev/spidev0.0";
+    uint32_t   spi_speed   = 8000000;
+    uint8_t    spi_mode    = 0;
     const char *gpio_chip  = "gpiochip4";
     unsigned int gpio_line = 2;
     int op_mode = 5;
@@ -97,19 +113,23 @@ int main(int argc, char *argv[])
     int8_t mount_sign[3] = {-1, -1, 1};
     int opt;
 
-    while ((opt = getopt(argc, argv, "i:g:l:m:x:h")) != -1) {
+    while ((opt = getopt(argc, argv, "b:i:s:p:o:g:l:m:x:h")) != -1) {
         switch (opt) {
+        case 'b': bus_type  = optarg; break;
         case 'i': i2c_dev   = optarg; break;
+        case 's': spi_dev   = optarg; break;
+        case 'p': spi_speed = (uint32_t)strtoul(optarg, NULL, 0); break;
+        case 'o': spi_mode  = (uint8_t)atoi(optarg); break;
         case 'g': gpio_chip = optarg; break;
         case 'l': gpio_line = (unsigned int)atoi(optarg); break;
         case 'm': op_mode   = atoi(optarg); break;
-        case 'x':
-            if (parse_mount(optarg, mount_axis, mount_sign) != 0) {
-                fprintf(stderr, "Invalid mount spec '%s'\n", optarg);
-                usage(argv[0]);
-                return 1;
-            }
-            break;
+	case 'x':
+		  if (parse_mount(optarg, mount_axis, mount_sign) != 0) {
+			  fprintf(stderr, "Invalid mount spec '%s'\n", optarg);
+			  usage(argv[0]);
+			  return 1;
+		  }
+		  break;
         case 'h': usage(argv[0]); return 0;
         default:  usage(argv[0]); return 1;
         }
@@ -120,15 +140,35 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    /* 解析总线类型 */
+    int use_spi;
+    if (strcmp(bus_type, "spi") == 0) {
+        use_spi = 1;
+    } else if (strcmp(bus_type, "i2c") == 0) {
+        use_spi = 0;
+    } else {
+        fprintf(stderr, "Invalid bus type '%s' (expected: i2c or spi)\n", bus_type);
+        return 1;
+    }
+
+    if (spi_mode > 3) {
+        fprintf(stderr, "Invalid SPI mode %d (0-3)\n", spi_mode);
+        return 1;
+    }
+
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
 
     printf("=== IMU HAL Read Sensor Example ===\n");
-    printf("I2C: %s, GPIO: %s line %u, Mode: %d, Mount: robot=(%c%c,%c%c,%c%c)\n",
-           i2c_dev, gpio_chip, gpio_line, op_mode,
-           mount_sign[0] < 0 ? '-' : '+', "XYZ"[mount_axis[0]],
-           mount_sign[1] < 0 ? '-' : '+', "XYZ"[mount_axis[1]],
-           mount_sign[2] < 0 ? '-' : '+', "XYZ"[mount_axis[2]]);
+    if (use_spi) {
+	    printf("Bus: SPI %s (mode=%u speed=%uHz), GPIO: %s line %u, Mode: %d, Mount: robot=(%c%c,%c%c,%c%c)\n",
+			    spi_dev, spi_mode, spi_speed, gpio_chip, gpio_line, op_mode, mount_sign[0] < 0 ? '-' : '+', "XYZ"[mount_axis[0]],
+			    mount_sign[1] < 0 ? '-' : '+', "XYZ"[mount_axis[1]],
+			    mount_sign[2] < 0 ? '-' : '+', "XYZ"[mount_axis[2]]);
+    } else {
+	    printf("Bus: I2C %s, GPIO: %s line %u, Mode: %d\n",
+			    i2c_dev, gpio_chip, gpio_line, op_mode);
+    }
 
     /* 1. 创建实例 */
     emd_gaf_t *gaf = emd_gaf_create();
@@ -137,20 +177,31 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /* 2. 初始化 */
-    emd_gaf_cfg_t cfg = {
-        .if_type   = EMD_GAF_IF_I2C,
-        .i2c_dev   = i2c_dev,
-        .gpio_chip = gpio_chip,
-        .gpio_line = gpio_line,
-        .op_mode   = op_mode,
-    };
+    /* 2. 初始化 — 根据总线类型配置 */
+    emd_gaf_cfg_t cfg = {0};
+    cfg.gpio_chip = gpio_chip;
+    cfg.gpio_line = gpio_line;
+    cfg.op_mode   = op_mode;
+
+    if (use_spi) {
+        cfg.if_type      = EMD_GAF_IF_SPI;
+        cfg.spi_dev      = spi_dev;
+        cfg.spi_speed_hz = spi_speed;
+        cfg.spi_mode     = spi_mode;
+        /* i2c_dev 留空，HAL 走 SPI 分支 */
+    } else {
+        cfg.if_type      = EMD_GAF_IF_I2C;
+        cfg.i2c_dev      = i2c_dev;
+        /* spi 字段留空，HAL 走 I2C 分支 */
+    }
+
     cfg.mount_axis[0] = mount_axis[0];
     cfg.mount_axis[1] = mount_axis[1];
     cfg.mount_axis[2] = mount_axis[2];
     cfg.mount_sign[0] = mount_sign[0];
     cfg.mount_sign[1] = mount_sign[1];
     cfg.mount_sign[2] = mount_sign[2];
+
     int rc = emd_gaf_init(gaf, &cfg);
     if (rc != 0) {
         fprintf(stderr, "IMU HAL init failed: rc=%d\n", rc);

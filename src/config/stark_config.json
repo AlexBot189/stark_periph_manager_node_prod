@@ -57,13 +57,13 @@
     "force_module": 1,
     "imu": {
       "driver": "invensense",
-      "interface": "i2c",
+      "interface": "spi",
       "i2c_dev": "/dev/i2c-3",
       "spi_dev": "/dev/spidev0.0",
       "spi_speed_hz": 8000000,
       "spi_mode": 0,
       "gpio_chip": "gpiochip4",
-      "gpio_line": 6,
+      "gpio_line": 3,
       "op_mode": 7
     },
     "foot_pressure": {
@@ -79,7 +79,9 @@
       "osr_t": 6,
       "osr_p": 2,
       "odr": 15,
-      "power_mode": 1,
+      "power_mode": 3,
+      "iir_p": 3,
+      "iir_t": 3,
       "sea_level_hpa": 1013.25
     }
   },
@@ -97,13 +99,10 @@
     "report": { "gpio_chip": "gpiochip0", "line": 6 }
   },
   "ros": {
-    "enabled": false,
-    "feedback_topic": "/stark/motor/feedback",
-    "state_topic": "/stark/motor/state",
-    "ctrl_sub_topic": "/stark/motor/ctrl"
+    "enabled": true
   },
   "web": {
-    "enabled": false,
+    "enabled": true,
     "port": 8080,
     "push_period_ms": 5
   }

@@ -1296,6 +1296,15 @@ static void _convert_output(const inv_edmp_gaf_outputs_t *in, uint64_t ts,
         float heading_rad = in->rv_heading_q27 / 134217728.0f;
         out->heading_deg  = heading_rad * 57.29578f;
     }
+    /* 回退: 6轴融合四元数 (无磁力计模式, yaw有漂移但roll/pitch准确) */
+    else if (in->grv_quat_valid) {
+        out->quat_w = in->grv_quat_q30[0] / 1073741824.0f;
+        out->quat_x = in->grv_quat_q30[1] / 1073741824.0f;
+        out->quat_y = in->grv_quat_q30[2] / 1073741824.0f;
+        out->quat_z = in->grv_quat_q30[3] / 1073741824.0f;
+        /* grv 无独立 heading, 置 0 */
+        out->heading_deg = 0.0f;
+    }
 
     /* 校准加速度 (Q16 ,  g) */
     if (in->acc_cal_valid) {
