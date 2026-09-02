@@ -263,6 +263,8 @@ void StarkRtWorker::ProcessMgmt()
                 mcmd.target1       = 0;
                 motor_hal_multi_ctrl(m_hal, &mcmd, 1);
             }
+            usleep(50000);
+            motor_hal_sdo_write(m_hal, id, OD_CONTROLWORD, 0x00, CW_SHUTDOWN, 2);
             break;
         case STARK_CMD_ESTOP:
             motor_hal_pdo_estop(m_hal, id);
@@ -275,6 +277,8 @@ void StarkRtWorker::ProcessMgmt()
                 mcmd.target1       = 0;
                 motor_hal_multi_ctrl(m_hal, &mcmd, 1);
             }
+            usleep(50000);
+            motor_hal_sdo_write(m_hal, id, OD_CONTROLWORD, 0x00, CW_SHUTDOWN, 2);
             break;
         case STARK_CMD_RECOVER:
             motor_hal_pdo_recover(m_hal, id);
@@ -283,6 +287,12 @@ void StarkRtWorker::ProcessMgmt()
             motor_hal_pdo_clear_fault(m_hal, id);
             motor_hal_pdo_enable(m_hal, id);
             motor_hal_ctrl_raw(m_hal, id, MOTOR_MODE_CURRENT, 0, 0, 0);
+            break;
+        case STARK_CMD_SDO_PHASE_UNLOCK:
+            motor_hal_sdo_write(m_hal, id, OD_CONTROLWORD, 0x00, CW_SHUTDOWN, 2);
+            break;
+        case STARK_CMD_SDO_PHASE_LOCK:
+            motor_hal_sdo_write(m_hal, id, OD_CONTROLWORD, 0x00, 0x0007, 2);
             break;
         default:
             break;
@@ -623,7 +633,7 @@ void StarkRtWorker::PublishFeedback()
             }
             if (baro_valid) {
                 d.air_pressure = baro_local.pressure_hpa;
-		d.altitude_m  = baro_local.altitude_m;
+            d.altitude_m  = baro_local.altitude_m;
             }
 
             /* 双电机 */
@@ -709,7 +719,7 @@ void StarkRtWorker::PublishFeedback()
                     int32_t vel_x10  = (int32_t)mfb.velocity;
                         int16_t iq_x100  = (int16_t)(mfb.current_iq);
            
-    	   	    int16_t fcode    = (int16_t)mfb.error_code;
+            int16_t fcode    = (int16_t)mfb.error_code;
                         int16_t mstate   = (int16_t)mfb.status_byte;
 
                         /* 温度: 优先 0x6A0 透传帧, 回退 0x300 */

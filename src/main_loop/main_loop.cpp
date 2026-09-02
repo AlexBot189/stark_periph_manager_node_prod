@@ -36,14 +36,25 @@ using namespace stark_periph_manager_node;
 
 /* 长按关机: 发布 PowerCtrl CTRL_SHUTDOWN, 由 power 节点处理 0x9001 */
 #ifdef ENABLE_ROS
+static ros::Publisher g_power_ctrl_pub;
+static bool g_power_ctrl_pub_ready = false;
+
+static void init_power_ctrl_publisher()
+{
+    if (g_power_ctrl_pub_ready) return;
+    ros::NodeHandle nh;
+    g_power_ctrl_pub = nh.advertise<stark_msgs::PowerCtrl>(
+        "/stark/power_ctrl", 1, true);  /* latch = true */
+    g_power_ctrl_pub_ready = true;
+    ECO_INFO_NEW("[BTN] power_ctrl publisher initialized");
+}
+
 static void request_shutdown()
 {
-    static ros::NodeHandle nh;
-    static ros::Publisher pub = nh.advertise<stark_msgs::PowerCtrl>(
-        "/stark/power_ctrl", 1);
+    init_power_ctrl_publisher();
     stark_msgs::PowerCtrl ctrl;
     ctrl.cmd = stark_msgs::PowerCtrl::CTRL_SHUTDOWN;
-    pub.publish(ctrl);
+    g_power_ctrl_pub.publish(ctrl);
     ECO_INFO_NEW("[BTN] long press -> publish CTRL_SHUTDOWN");
 }
 #else
@@ -403,11 +414,26 @@ static void poll_booting(stark_shm_t* shm, int motor_count,
 
 /*
  * poll_ready — READY 状态逻辑
- *   待算法校准 + 控制. 检测到电机使能 → RUNNING
+ *   进入 READY 时发 SDO 0x06 (Shutdown) 解除三相锁定, 之后待算法使能 → RUNNING
  */
+static bool g_ready_shutdown_done = false;  /* READY 时已发 0x06 */
 
 static void poll_ready(motor_hal_t* hal, stark_shm_t* shm, int motor_count)
 {
+    /* 进入 READY 时, 对所有在线电机发 SDO Shutdown (0x6040=0x06), 解除三相锁定 */
+    if (!g_ready_shutdown_done) {
+        for (int id = 1; id <= motor_count; id++) {
+            if (!(shm->motor_online & (1 << (id - 1)))) continue;
+            int ret = motor_hal_sdo_write(hal, (uint8_t)id, OD_CONTROLWORD, 0x00, 0x06, 2);
+            if (ret == 0) {
+                ECO_INFO_NEW("[main] motor {} SDO Shutdown (0x06) sent, 3-phase unlocked", id);
+            } else {
+                ECO_WARN_NEW("[main] motor {} SDO Shutdown failed ret={}", id, ret);
+            }
+        }
+        g_ready_shutdown_done = true;
+    }
+
     if (any_motor_op_enabled(hal, shm, motor_count)) {
         ECO_INFO_NEW("[main] motor enabled by algorithm, entering RUNNING");
         state_transition(STATE_RUNNING);
@@ -423,6 +449,7 @@ static void poll_fault(motor_hal_t* hal, stark_shm_t* shm, int motor_count)
 {
     if (!poll_fault_check(hal, shm, motor_count)) {
         ECO_INFO_NEW("[main] fault cleared, returning READY");
+        g_ready_shutdown_done = false;  /* 重新进入 READY 时再发 0x06 */
         if (g_rt_worker) g_rt_worker->SetActive(true);  /* 恢复控制 */
         state_transition(STATE_READY);
     }
@@ -582,6 +609,10 @@ void main_loop_run(motor_hal_t* hal, stark_shm_t* shm,
     bool sync_started = false;
 
     ECO_INFO_NEW("[main] entering main loop (non-blocking)");
+
+#ifdef ENABLE_ROS
+    init_power_ctrl_publisher();
+#endif
 
     while (g_running) {
 #ifdef ENABLE_ROS

@@ -504,6 +504,7 @@ static inline void stark_sdo_mit_migrate(stark_client_t* c, int id)
     _stark_mbox_commit(c);
 }
 
+
 /* SDO 轮廓速度 (PV, SDO 通过 mailbox → main_loop → StarkMotorCtrl) */
 
 /*
@@ -564,6 +565,14 @@ static inline void _stark_mgmt_cmd(stark_client_t* c, int id, int cmd)
     __atomic_thread_fence(__ATOMIC_RELEASE);
     __atomic_add_fetch(&c->shm->mgmt_seq[idx], 1, __ATOMIC_RELEASE);
 }
+
+/* 关闭三相锁定 (SDO 0x6040=0x06), 电机可自由转动 */
+static inline void stark_phase_unlock(stark_client_t* c, int id)
+    { _stark_mgmt_cmd(c, id, STARK_CMD_SDO_PHASE_UNLOCK); }
+
+/* 开启三相锁定 (SDO 0x6040=0x07), 电机锁定 */
+static inline void stark_phase_lock(stark_client_t* c, int id)
+    { _stark_mgmt_cmd(c, id, STARK_CMD_SDO_PHASE_LOCK); }
 
 /* 使能电机 */
 static inline void stark_enable(stark_client_t* c, int id)

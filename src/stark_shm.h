@@ -160,6 +160,8 @@ typedef enum {
     STARK_CMD_SDO_VEL         = 22,      /* SDO 轮廓速度(PV), value=RPM×100 value2=accel          */
     STARK_CMD_SDO_TORQUE_CALIB = 23,     /* SDO 力矩标定, value=torque_mNm                      */
     STARK_CMD_SDO_MIT_MIGRATE  = 24,     /* SDO MIT缩放迁移, value=0x2546值 (默认20)               */
+    STARK_CMD_SDO_PHASE_UNLOCK = 25,    /* SDO 关闭三相锁定 (0x6040=0x06), 退出锁定             */
+    STARK_CMD_SDO_PHASE_LOCK   = 26,    /* SDO 开启三相锁定 (0x6040=0x07), 进入锁定             */
 } stark_cmd_type_t;
 
 typedef struct {
