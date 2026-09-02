@@ -178,11 +178,11 @@ void Bhi360IioSensor::_ReaderThread()
                     float v = strtof(s, (char**)&s);
                     return v;
                 };
-                skip_to_num(); d.gyro_x = read_num();
+                skip_to_num(); d.gyro_x = read_num() / 16.384f;
                 while (*s && (*s == '-' || *s == '.' || (*s >= '0' && *s <= '9'))) s++;
-                skip_to_num(); d.gyro_y = read_num();
+                skip_to_num(); d.gyro_y = read_num() / 16.384f;
                 while (*s && (*s == '-' || *s == '.' || (*s >= '0' && *s <= '9'))) s++;
-                skip_to_num(); d.gyro_z = read_num();
+                skip_to_num(); d.gyro_z = read_num() / 16.384f;
             }
         }
 

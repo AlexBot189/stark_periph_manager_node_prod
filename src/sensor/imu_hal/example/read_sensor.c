@@ -305,9 +305,10 @@ static void bhi360_read(void)
     bhi360_read_attr(base, "acc_corrected", &ax, &ay, &az);
     ax /= 4096.0f; ay /= 4096.0f; az /= 4096.0f;  /* LSB -> g */
 
-    /* 陀螺仪 (自定义 sysfs: gyro_corrected) */
+    /* 陀螺仪 (自定义 sysfs: gyro_corrected, ±2000dps 量程, 1dps=16.384 LSB) */
     float gx, gy, gz;
     bhi360_read_attr(base, "gyro_corrected", &gx, &gy, &gz);
+    gx /= 16.384f; gy /= 16.384f; gz /= 16.384f;  /* LSB -> dps */
 
     /* 磁力计 (自定义 sysfs: mag_corrected) */
     float mx, my, mz;
