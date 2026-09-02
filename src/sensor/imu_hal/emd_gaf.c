@@ -35,6 +35,9 @@
 /* Frontend */
 #include "frontend.h"
 
+/* IMU 坐标变换 (ICM/BHI360 共用) */
+#include "imu_mount.h"
+
 /* 常量定义 */
 
 /*
@@ -42,7 +45,7 @@
  * 本机转到标准机器人坐标(前-左-上 FLU, 右手系).
  * 映射由 config.json 的 imu.mount 配置 (robot_x/y/z 取 chip 哪个轴 + 符号),
  * 未配置时用默认 robot=(−Z,−X,+Y) (芯片绕 X 轴 +90 安装).
- * 见 _remap_vec_axis / _remap_quat_axis.
+ * 见 imu_remap_vec / imu_remap_quat (imu_mount.h).
  */
 
 #define ACCEL_FSR_ENUM (ACCEL_CONFIG0_ACCEL_UI_FS_SEL_4_G)
@@ -263,96 +266,8 @@ static void *_thread_main(void *arg);
 static emd_gaf_t *g_active_instance = NULL;
 
 /*
- * 坐标轴映射工具: axis[3]/sign[3] 描述 robot[x,y,z] 取 chip 的哪个轴 + 符号.
- * 例: robot=(−Z,−X,+Y) => axis={2,0,1}, sign={-1,-1,1}.
- */
-
-/* 向量变换: out[axis] = sign * in 对应轴 */
-static inline void _remap_vec_axis(const int8_t axis[3], const int8_t sign[3],
-                                   float *x, float *y, float *z)
-{
-    float v[3] = { *x, *y, *z };
-    *x = (float)sign[0] * v[axis[0]];
-    *y = (float)sign[1] * v[axis[1]];
-    *z = (float)sign[2] * v[axis[2]];
-}
-
-/* 轴映射 -> 3x3 旋转矩阵 R (robot = R * chip, 行优先) */
-static void _axis_map_to_matrix(const int8_t axis[3], const int8_t sign[3],
-                                float R[9])
-{
-    int i;
-    for (i = 0; i < 9; i++) R[i] = 0.0f;
-    R[0 * 3 + axis[0]] = (float)sign[0];
-    R[1 * 3 + axis[1]] = (float)sign[1];
-    R[2 * 3 + axis[2]] = (float)sign[2];
-}
-
-/* 旋转矩阵 -> 四元数 (Shepperd, w>=0 规范化) */
-static void _matrix_to_quat(const float R[9],
-                            float *qw, float *qx, float *qy, float *qz)
-{
-    float trace = R[0] + R[4] + R[8];
-    float s;
-    if (trace > 0.0f) {
-        s = sqrtf(trace + 1.0f) * 2.0f;
-        *qw = 0.25f * s;
-        *qx = (R[7] - R[5]) / s;
-        *qy = (R[2] - R[6]) / s;
-        *qz = (R[3] - R[1]) / s;
-    } else if (R[0] > R[4] && R[0] > R[8]) {
-        s = sqrtf(1.0f + R[0] - R[4] - R[8]) * 2.0f;
-        *qw = (R[7] - R[5]) / s;
-        *qx = 0.25f * s;
-        *qy = (R[1] + R[3]) / s;
-        *qz = (R[2] + R[6]) / s;
-    } else if (R[4] > R[8]) {
-        s = sqrtf(1.0f + R[4] - R[0] - R[8]) * 2.0f;
-        *qw = (R[2] - R[6]) / s;
-        *qx = (R[1] + R[3]) / s;
-        *qy = 0.25f * s;
-        *qz = (R[5] + R[7]) / s;
-    } else {
-        s = sqrtf(1.0f + R[8] - R[0] - R[4]) * 2.0f;
-        *qw = (R[3] - R[1]) / s;
-        *qx = (R[2] + R[6]) / s;
-        *qy = (R[5] + R[7]) / s;
-        *qz = 0.25f * s;
-    }
-    /* w >= 0 规范化, 保证与默认安装的四元数约定一致 */
-    if (*qw < 0.0f) {
-        *qw = -*qw; *qx = -*qx; *qy = -*qy; *qz = -*qz;
-    }
-}
-
-/*
- * 四元数变换: q_robot = q_chip ⊗ q_R^(-1) (右乘逆).
- * 注意: eDMP GAF 的 rv_quat convention 为芯片黑盒, 若实测 roll/pitch/yaw
- * 符号不对, 改为左乘或取共轭.
- */
-static void _remap_quat_axis(const int8_t axis[3], const int8_t sign[3],
-                             float *w, float *x, float *y, float *z)
-{
-    float R[9];
-    float qrw, qrx, qry, qrz;
-    float irw, irx, iry, irz;
-    float qw = *w, qx = *x, qy = *y, qz = *z;
-
-    _axis_map_to_matrix(axis, sign, R);
-    _matrix_to_quat(R, &qrw, &qrx, &qry, &qrz);
-
-    /* q_R 共轭 = q_R^(-1) */
-    irw =  qrw; irx = -qrx; iry = -qry; irz = -qrz;
-
-    /* Hamilton 乘法: q_robot = q_chip ⊗ q_R^(-1) */
-    *w = qw*irw - qx*irx - qy*iry - qz*irz;
-    *x = qw*irx + qx*irw + qy*irz - qz*iry;
-    *y = qw*iry - qx*irz + qy*irw + qz*irx;
-    *z = qw*irz + qx*iry - qy*irx + qz*irw;
-}
-
-/*
  * 公共 API — 生命周期
+ * 坐标轴映射工具见 imu_mount.h (imu_remap_vec / imu_remap_quat)
  */
 
 emd_gaf_t *emd_gaf_create(void)
@@ -1188,9 +1103,9 @@ static void _sensor_event_cb(inv_imu_sensor_event_t *event)
         g->cached_gyro.gyro_z = event->gyro[2] * GYRO_FSR_DPS / 32768.0f;
     }
     g->cached_gyro.timestamp_us = g->timestamp;
-    _remap_vec_axis(g->mount_axis, g->mount_sign,
+    imu_remap_vec(g->mount_axis, g->mount_sign,
                     &g->cached_accel.accel_x, &g->cached_accel.accel_y, &g->cached_accel.accel_z);
-    _remap_vec_axis(g->mount_axis, g->mount_sign,
+    imu_remap_vec(g->mount_axis, g->mount_sign,
                     &g->cached_gyro.gyro_x, &g->cached_gyro.gyro_y, &g->cached_gyro.gyro_z);
     g->imu_updated = 1;
 
@@ -1208,9 +1123,9 @@ static void _sensor_event_cb(inv_imu_sensor_event_t *event)
         raw.temp_c  = g->edmp_outputs.temp_degC_q16 / 65536.0f;
         raw.timestamp_us = g->timestamp;
         /* 对原始数据应用坐标变换 */
-        _remap_vec_axis(g->mount_axis, g->mount_sign,
+        imu_remap_vec(g->mount_axis, g->mount_sign,
                         &raw.accel_x, &raw.accel_y, &raw.accel_z);
-        _remap_vec_axis(g->mount_axis, g->mount_sign,
+        imu_remap_vec(g->mount_axis, g->mount_sign,
                         &raw.gyro_x, &raw.gyro_y, &raw.gyro_z);
         g->raw_data_cb(&raw, g->raw_data_user);
     }
@@ -1296,15 +1211,6 @@ static void _convert_output(const inv_edmp_gaf_outputs_t *in, uint64_t ts,
         float heading_rad = in->rv_heading_q27 / 134217728.0f;
         out->heading_deg  = heading_rad * 57.29578f;
     }
-    /* 回退: 6轴融合四元数 (无磁力计模式, yaw有漂移但roll/pitch准确) */
-    else if (in->grv_quat_valid) {
-        out->quat_w = in->grv_quat_q30[0] / 1073741824.0f;
-        out->quat_x = in->grv_quat_q30[1] / 1073741824.0f;
-        out->quat_y = in->grv_quat_q30[2] / 1073741824.0f;
-        out->quat_z = in->grv_quat_q30[3] / 1073741824.0f;
-        /* grv 无独立 heading, 置 0 */
-        out->heading_deg = 0.0f;
-    }
 
     /* 校准加速度 (Q16 ,  g) */
     if (in->acc_cal_valid) {
@@ -1335,14 +1241,14 @@ static void _convert_output(const inv_edmp_gaf_outputs_t *in, uint64_t ts,
         out->temp_c = in->temp_degC_q16 / 65536.0f;
     }
 
-    /* 传感器坐标 -> 标准机器人坐标(FLU), 见 _remap_vec_axis/_remap_quat_axis */
-    _remap_vec_axis(mount_axis, mount_sign,
+    /* 传感器坐标 -> 标准机器人坐标(FLU), 见 imu_remap_vec/imu_remap_quat */
+    imu_remap_vec(mount_axis, mount_sign,
                     &out->accel_x, &out->accel_y, &out->accel_z);
-    _remap_vec_axis(mount_axis, mount_sign,
+    imu_remap_vec(mount_axis, mount_sign,
                     &out->gyro_x, &out->gyro_y, &out->gyro_z);
-    _remap_vec_axis(mount_axis, mount_sign,
+    imu_remap_vec(mount_axis, mount_sign,
                     &out->mag_x, &out->mag_y, &out->mag_z);
-    _remap_quat_axis(mount_axis, mount_sign,
+    imu_remap_quat(mount_axis, mount_sign,
                      &out->quat_w, &out->quat_x, &out->quat_y, &out->quat_z);
     /* heading 为航向标量, 保持当前安装(绕 X+90)的固定偏置; 安装改变时需同步调整 */
     out->heading_deg += 90.0f;

@@ -86,6 +86,11 @@ int Bhi360IioSensor::_SysfsReadInt(const std::string& path)
 
 bool Bhi360IioSensor::Init(const ImuConfig& cfg)
 {
+    /* 保存配置 */
+    m_sample_period_ms = cfg.sample_period_ms;
+    memcpy(m_mount_axis, cfg.mount_axis, sizeof(m_mount_axis));
+    memcpy(m_mount_sign, cfg.mount_sign, sizeof(m_mount_sign));
+
     /* 定位 IIO 设备 */
     if (!_FindIioDevice("bhi360", m_iio_path)) {
         fprintf(stderr, "[Bhi360IioSensor] IIO device 'bhi360' not found\n");
@@ -103,7 +108,7 @@ bool Bhi360IioSensor::Init(const ImuConfig& cfg)
     usleep(100000);
     _SysfsWrite(m_iio_path + "/config_function", "6 1");   /* 陀螺仪校准 */
     usleep(100000);
-    _SysfsWrite(m_iio_path + "/config_function", "10 1");  /* 磁力计校准 (BSx 9轴算法需要) */
+    _SysfsWrite(m_iio_path + "/config_function", "10 1");  /* 磁力计校准 */
     usleep(100000);
     _SysfsWrite(m_iio_path + "/config_function", "16 1");  /* 9轴四元数 */
     usleep(100000);
@@ -135,8 +140,7 @@ void Bhi360IioSensor::_ReaderThread()
     while (m_running.load(std::memory_order_acquire)) {
         imu_data_t d = {};
 
-        /* 加速度 (自定义 sysfs: acc_corrected, 直接读 FIFO 缓存)
-         * 格式: "Accel Corrected Value:, X: -182, Y: -125, Z: -4089" */
+        /* 加速度 (自定义 sysfs: acc_corrected, ±8g 量程 1g=4096 LSB) */
         {
             FILE* f = fopen((p + "/acc_corrected").c_str(), "r");
             if (f) {
@@ -151,11 +155,11 @@ void Bhi360IioSensor::_ReaderThread()
                     float v = strtof(s, (char**)&s);
                     return v;
                 };
-                skip_to_num(); d.acc_x = read_num();
+                skip_to_num(); d.acc_x = read_num() / 4096.0f;
                 while (*s && (*s == '-' || *s == '.' || (*s >= '0' && *s <= '9'))) s++;
-                skip_to_num(); d.acc_y = read_num();
+                skip_to_num(); d.acc_y = read_num() / 4096.0f;
                 while (*s && (*s == '-' || *s == '.' || (*s >= '0' && *s <= '9'))) s++;
-                skip_to_num(); d.acc_z = read_num();
+                skip_to_num(); d.acc_z = read_num() / 4096.0f;
             }
         }
 
@@ -203,6 +207,12 @@ void Bhi360IioSensor::_ReaderThread()
         }
 
         /* 从四元数计算欧拉角 (ZYX: Yaw-Pitch-Roll, rad -> deg) */
+        /* 先做坐标变换: 芯片坐标 -> 机器人坐标 */
+        imu_remap_vec(m_mount_axis, m_mount_sign, &d.acc_x, &d.acc_y, &d.acc_z);
+        imu_remap_vec(m_mount_axis, m_mount_sign, &d.gyro_x, &d.gyro_y, &d.gyro_z);
+        imu_remap_vec(m_mount_axis, m_mount_sign, &d.mag_x, &d.mag_y, &d.mag_z);
+        imu_remap_quat(m_mount_axis, m_mount_sign, &d.quat_w, &d.quat_x, &d.quat_y, &d.quat_z);
+
         float qw = d.quat_w, qx = d.quat_x, qy = d.quat_y, qz = d.quat_z;
         d.yaw = atan2f(2.0f*(qw*qz + qx*qy), 1.0f - 2.0f*(qy*qy + qz*qz)) * 57.29578f;
         float sp = 2.0f*(qw*qy - qz*qx);

@@ -13,11 +13,13 @@
 #pragma once
 
 #include "sensor/imu/imu_source.h"
+#include "sensor/imu/imu_mount.h"
 #include "utils/seqlock.h"
 
 #include <atomic>
 #include <thread>
 #include <string>
+#include <cstdint>
 
 namespace stark_periph_manager_node {
 
@@ -43,7 +45,11 @@ private:
     int _SysfsReadInt(const std::string& path);
 
     std::string m_iio_path;           /* /sys/bus/iio/devices/iio:deviceN */
-    uint32_t    m_sample_period_ms = 10;  /* 轮询周期 (默认 10ms = 100Hz) */
+    uint32_t    m_sample_period_ms = 2;   /* 轮询周期 (默认 2ms = 500Hz) */
+
+    /* 坐标轴映射 */
+    int8_t m_mount_axis[3] = {0, 1, 2};  /* 默认单位矩阵 */
+    int8_t m_mount_sign[3] = {1, 1, 1};
 
     std::atomic<bool> m_running{false};
     std::atomic<bool> m_ready{false};

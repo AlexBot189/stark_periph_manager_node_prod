@@ -26,6 +26,7 @@
 #include <time.h>
 
 #include "emd_gaf.h"
+#include "imu_mount.h"
 
 static volatile int g_running = 1;
 static emd_raw_sensor_t g_latest_raw;
@@ -47,6 +48,8 @@ static struct timespec g_baro_t1 = {0}, g_baro_t2 = {0};
 static int  g_bhi360_enabled = 0;
 static char g_bhi360_iio_path[256] = {0};
 static int  g_bhi360_sample_ms = 2;  /* 轮询周期, 默认 2ms (500Hz) */
+static int8_t g_bhi360_mount_axis[3] = {0, 1, 2};  /* 默认单位矩阵 */
+static int8_t g_bhi360_mount_sign[3] = {1, 1, 1};
 /* ── BHI360 频率统计 ── */
 static int  g_bhi360_changes = 0;
 static struct timespec g_bhi360_t1 = {0}, g_bhi360_t2 = {0};
@@ -81,6 +84,7 @@ static void usage(const char *prog)
     printf("  BHI360 IMU (IIO sysfs):\n");
     printf("    -I <name>    IIO device name (e.g. bhi360)\n");
     printf("    -M <ms>      poll period ms (default: 2 = 500Hz)\n");
+    printf("    -x <map>     mount map (default: X,1,Y,1,Z,1 = identity)\n");
     printf("\n");
     printf("  Barometer (BMP581):\n");
     printf("    -B <name>    barometer input name (e.g. bmp5xy)\n");
@@ -296,11 +300,12 @@ static void bhi360_read(void)
     strncpy(base, g_bhi360_iio_path, sizeof(base)-1);
     base[sizeof(base)-1] = 0;
 
-    /* 加速度 (自定义 sysfs: acc_corrected, 单位 LSB, 1g=4096) */
+    /* 加速度 (自定义 sysfs: acc_corrected, 单位 LSB, ±8g 量程 1g=4096) */
     float ax, ay, az;
     bhi360_read_attr(base, "acc_corrected", &ax, &ay, &az);
+    ax /= 4096.0f; ay /= 4096.0f; az /= 4096.0f;  /* LSB -> g */
 
-    /* 陀螺仪 (自定义 sysfs: gyro_corrected, 单位 LSB) */
+    /* 陀螺仪 (自定义 sysfs: gyro_corrected) */
     float gx, gy, gz;
     bhi360_read_attr(base, "gyro_corrected", &gx, &gy, &gz);
 
@@ -339,6 +344,12 @@ static void bhi360_read(void)
     int calib_acc = (rv_accuracy == 3) ? 3 : (rv_accuracy >= 1 ? 1 : 0);
     int calib_gyro = calib_acc;  /* 陀螺仪精度跟随9轴融合精度 */
     int calib_mag = calib_acc;
+
+    /* 坐标变换: 芯片坐标 -> 机器人坐标 (和 ICM 一致) */
+    imu_remap_vec(g_bhi360_mount_axis, g_bhi360_mount_sign, &ax, &ay, &az);
+    imu_remap_vec(g_bhi360_mount_axis, g_bhi360_mount_sign, &gx, &gy, &gz);
+    imu_remap_vec(g_bhi360_mount_axis, g_bhi360_mount_sign, &mx, &my, &mz);
+    imu_remap_quat(g_bhi360_mount_axis, g_bhi360_mount_sign, &qw, &qx, &qy, &qz);
 
     /* 从四元数计算欧拉角 (ZYX: Yaw-Pitch-Roll, rad -> deg) */
     float yaw   = atan2f(2.0f*(qw*qz + qx*qy), 1.0f - 2.0f*(qy*qy + qz*qz)) * 57.29578f;
@@ -517,7 +528,13 @@ int main(int argc, char *argv[])
         case 'g': gpio_chip = optarg; break;
         case 'l': gpio_line = (unsigned int)atoi(optarg); break;
         case 'm': op_mode = atoi(optarg); break;
-        case 'x': if (parse_mount(optarg, mount_axis, mount_sign) != 0) { fprintf(stderr, "Invalid mount\n"); return 1; } break;
+        case 'x':
+            if (parse_mount(optarg, mount_axis, mount_sign) != 0 ||
+                parse_mount(optarg, g_bhi360_mount_axis, g_bhi360_mount_sign) != 0) {
+                fprintf(stderr, "Invalid mount spec '%s'\n", optarg);
+                usage(argv[0]); return 1;
+            }
+            break;
         case 'I': bhi360_name = optarg; break;
         case 'M': g_bhi360_sample_ms = atoi(optarg); break;
         case 'B': baro_name = optarg; break;

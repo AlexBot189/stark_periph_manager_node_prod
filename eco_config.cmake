@@ -73,6 +73,7 @@ if(${BUILD_PLATFORM} STREQUAL "rv1126b")
 		";${MH_DIR}"
 		";${MH_DIR}/inc"
 		";${IH_DIR}"
+		";${IH_DIR}/../imu"
 		";${IH_DIR}/inc"
 		";${IH_DIR}/driver"
 		";${IH_DIR}/driver/icm45608"

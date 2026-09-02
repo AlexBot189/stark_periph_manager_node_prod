@@ -26,6 +26,7 @@ bool ImuBhi360::initialize(const nlohmann::json& config)
     cfg.gpio_chip    = config.value("gpio_chip", std::string("gpiochip4"));
     cfg.gpio_line    = config.value("gpio_line", 6u);
     cfg.op_mode      = config.value("op_mode", 5);
+    cfg.sample_period_ms = config.value("sample_period_ms", 2u);
 
     /* 坐标轴映射 (和 ImuIcm45608 一致的解析逻辑) */
     if (config.contains("mount")) {

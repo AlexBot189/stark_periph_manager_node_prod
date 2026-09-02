@@ -81,11 +81,19 @@ bool CanDispatcher::InitDispatcher()
         imu_entry["config"]["gpio_chip"]    = m_imu_cfg.gpio_chip;
         imu_entry["config"]["gpio_line"]    = m_imu_cfg.gpio_line;
         imu_entry["config"]["op_mode"]      = m_imu_cfg.op_mode;
+        imu_entry["config"]["sample_period_ms"] = m_imu_cfg.sample_period_ms;
         /* 坐标轴映射 (传递给设备) */
-        if (m_imu_cfg.mount_axis[0] != 2 || m_imu_cfg.mount_sign[0] != -1) {
+        {
+            const char axis_names[] = "XYZ";
             imu_entry["config"]["mount"]["robot_x"]["from_axis"] =
-                std::string(1, "XYZ"[m_imu_cfg.mount_axis[0]]);
+                std::string(1, axis_names[m_imu_cfg.mount_axis[0]]);
             imu_entry["config"]["mount"]["robot_x"]["sign"] = (int)m_imu_cfg.mount_sign[0];
+            imu_entry["config"]["mount"]["robot_y"]["from_axis"] =
+                std::string(1, axis_names[m_imu_cfg.mount_axis[1]]);
+            imu_entry["config"]["mount"]["robot_y"]["sign"] = (int)m_imu_cfg.mount_sign[1];
+            imu_entry["config"]["mount"]["robot_z"]["from_axis"] =
+                std::string(1, axis_names[m_imu_cfg.mount_axis[2]]);
+            imu_entry["config"]["mount"]["robot_z"]["sign"] = (int)m_imu_cfg.mount_sign[2];
         }
         devices.push_back(imu_entry);
     }
@@ -444,6 +452,28 @@ bool CanDispatcher::LoadMotorConfig()
                 m_imu_cfg.gpio_chip    = imu_cfg.value("gpio_chip", std::string("gpiochip4"));
                 m_imu_cfg.gpio_line    = imu_cfg.value("gpio_line", 6u);
                 m_imu_cfg.op_mode      = imu_cfg.value("op_mode",   5);
+                m_imu_cfg.sample_period_ms = imu_cfg.value("sample_period_ms", 2u);
+                /* mount 坐标轴映射 */
+                if (imu_cfg.contains("mount")) {
+                    const auto& m = imu_cfg["mount"];
+                    auto axis_of = [](const std::string& s) -> int8_t {
+                        if (!s.empty() && (s[0] == 'x' || s[0] == 'X')) return 0;
+                        if (!s.empty() && (s[0] == 'y' || s[0] == 'Y')) return 1;
+                        return 2;
+                    };
+                    if (m.contains("robot_x")) {
+                        m_imu_cfg.mount_axis[0] = axis_of(m["robot_x"].value("from_axis", std::string("Z")));
+                        m_imu_cfg.mount_sign[0] = m["robot_x"].value("sign", -1);
+                    }
+                    if (m.contains("robot_y")) {
+                        m_imu_cfg.mount_axis[1] = axis_of(m["robot_y"].value("from_axis", std::string("X")));
+                        m_imu_cfg.mount_sign[1] = m["robot_y"].value("sign", -1);
+                    }
+                    if (m.contains("robot_z")) {
+                        m_imu_cfg.mount_axis[2] = axis_of(m["robot_z"].value("from_axis", std::string("Y")));
+                        m_imu_cfg.mount_sign[2] = m["robot_z"].value("sign", 1);
+                    }
+                }
             }
 
             /* foot_pressure 子配置 */
