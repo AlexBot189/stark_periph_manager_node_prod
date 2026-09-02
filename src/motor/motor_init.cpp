@@ -8,6 +8,7 @@
 #include "framework/device_manager.h"
 #include "framework/motor_canfd.h"
 #include "framework/imu_sensor_device.h"
+#include "framework/imu_bhi360_device.h"
 #include "framework/foot_pressure_sensor_device.h"
 #include "framework/barometer_device.h"
 #include "nlohmann/json.hpp"
@@ -62,11 +63,15 @@ bool CanDispatcher::InitDispatcher()
         devices.push_back(motor_entry);
     }
 
-    /* IMU 接入框架 (driver=invensense 才注册; bosch 未实现, 保持 running without IMU) */
-    if (m_imu_cfg.driver != "bosch") {
+    /* IMU 接入框架: 根据 driver 选择不同设备实现 */
+    {
         nlohmann::json imu_entry;
         imu_entry["name"]                   = "imu";
-        imu_entry["driver"]                 = "imu_icm45608";
+        if (m_imu_cfg.driver == "bhi360") {
+            imu_entry["driver"]             = "imu_bhi360";
+        } else {
+            imu_entry["driver"]             = "imu_icm45608";
+        }
         imu_entry["config"]["driver"]       = m_imu_cfg.driver;
         imu_entry["config"]["interface"]    = m_imu_cfg.interface;
         imu_entry["config"]["i2c_dev"]      = m_imu_cfg.i2c_dev;
@@ -76,9 +81,13 @@ bool CanDispatcher::InitDispatcher()
         imu_entry["config"]["gpio_chip"]    = m_imu_cfg.gpio_chip;
         imu_entry["config"]["gpio_line"]    = m_imu_cfg.gpio_line;
         imu_entry["config"]["op_mode"]      = m_imu_cfg.op_mode;
+        /* 坐标轴映射 (传递给设备) */
+        if (m_imu_cfg.mount_axis[0] != 2 || m_imu_cfg.mount_sign[0] != -1) {
+            imu_entry["config"]["mount"]["robot_x"]["from_axis"] =
+                std::string(1, "XYZ"[m_imu_cfg.mount_axis[0]]);
+            imu_entry["config"]["mount"]["robot_x"]["sign"] = (int)m_imu_cfg.mount_sign[0];
+        }
         devices.push_back(imu_entry);
-    } else {
-        ECO_WARN_NEW("[CanDispatcher] IMU driver 'bosch' not implemented, running without IMU");
     }
 
     /* 足压接入框架 (enabled 才注册) */
@@ -122,10 +131,16 @@ bool CanDispatcher::InitDispatcher()
     m_hal = motor_dev->hal();
 
     /* 抽 IMU/足压底层指针 (RT 线程直接用, 不经过虚接口, 零延时) */
-    if (m_imu_cfg.driver != "bosch") {
-        auto* imu_dev = dynamic_cast<stark::ImuIcm45608*>(
-            stark::DeviceManager::instance().find("imu"));
-        m_imu_sensor = imu_dev ? imu_dev->source() : nullptr;
+    {
+        if (m_imu_cfg.driver == "bhi360") {
+            auto* imu_dev = dynamic_cast<stark::ImuBhi360*>(
+                stark::DeviceManager::instance().find("imu"));
+            m_imu_sensor = imu_dev ? imu_dev->source() : nullptr;
+        } else {
+            auto* imu_dev = dynamic_cast<stark::ImuIcm45608*>(
+                stark::DeviceManager::instance().find("imu"));
+            m_imu_sensor = imu_dev ? imu_dev->source() : nullptr;
+        }
         if (!m_imu_sensor) {
             ECO_WARN_NEW("[CanDispatcher] IMU init failed, running without IMU");
         }
@@ -451,8 +466,6 @@ bool CanDispatcher::LoadMotorConfig()
                 m_baro_cfg.odr          = baro.value("odr", 15);
                 m_baro_cfg.power_mode   = baro.value("power_mode", 1);
                 m_baro_cfg.sea_level_hpa = baro.value("sea_level_hpa", 1013.25f);
-		m_baro_cfg.iir_p        = baro.value("iir_p", 3);
-		m_baro_cfg.iir_t        = baro.value("iir_t", 3);
             }
         }
 
