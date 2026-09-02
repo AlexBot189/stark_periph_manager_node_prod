@@ -1,0 +1,289 @@
+<mxfile host="app.diagrams.net" agent="Beta" version="26.0.0">
+  <diagram name="Hall Assisted Calibration" id="hall_calib_flow">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- A: 按键触发校准 (起始节点, 蓝色) -->
+        <mxCell id="A" value="按键触发校准" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="550" y="20" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- B: 失能电机 (操作步骤, 灰色) -->
+        <mxCell id="B" value="失能电机&lt;br&gt;DS402 Shutdown (0x6040=0x06)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="520" y="100" width="260" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- C: 判断 hall_calib.bin (菱形, 黄色) -->
+        <mxCell id="C" value="hall_calib.bin&amp;#xa;存在且 valid=1?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="540" y="180" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- D: Phase 0 霍尔采样 (紫色) -->
+        <mxCell id="D" value="Phase 0: 霍尔采样&lt;br&gt;用户缓慢活动关节 3~5s&lt;br&gt;记录 hall_adc0/1/2 + encoder_pos" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="180" y="300" width="300" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- E: 加载标定数据 (绿色) -->
+        <mxCell id="E" value="加载 hall_calib.bin&lt;br&gt;读取 offset/amplitude/stand_phase" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="760" y="300" width="300" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- F: 计算标定参数 (灰色) -->
+        <mxCell id="F" value="计算标定参数&lt;br&gt;offset = (max + min) / 2&lt;br&gt;amplitude = (max - min) / 2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="180" y="410" width="300" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- G: 计算电气相位 (灰色) -->
+        <mxCell id="G" value="计算电气相位&lt;br&gt;phase = atan2(b_norm, a_norm)&lt;br&gt;建立 (angle &amp;#8594; phase) 查找表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="180" y="520" width="300" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- H: 保存 hall_calib.bin (绿色) -->
+        <mxCell id="H" value="保存 hall_calib.bin&lt;br&gt;offset + amplitude + stand_phase" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="180" y="630" width="300" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- I: Phase 1 站立检测 (紫色) -->
+        <mxCell id="I" value="Phase 1: 站立检测&lt;br&gt;等待用户站稳" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="550" y="400" width="260" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- J: 判断 编码器角度 (菱形, 黄色) -->
+        <mxCell id="J" value="条件1: 编码器角度&lt;br&gt;在站立区间内?&lt;br&gt;[stand_min, stand_max]" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="540" y="490" width="280" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- K: 继续等待 (灰色) -->
+        <mxCell id="K" value="stable_count = 0&lt;br&gt;继续等待" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="900" y="510" width="160" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- L: 判断 速度 (菱形, 黄色) -->
+        <mxCell id="L" value="条件2: 速度 &lt; 阈值?&lt;br&gt;(&lt; 2°/s)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="540" y="620" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- M: 判断 霍尔相位 (菱形, 黄色) -->
+        <mxCell id="M" value="条件3: 霍尔相位&lt;br&gt;在站立区间内?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="540" y="740" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- N: 判断 持续时间 (菱形, 黄色) -->
+        <mxCell id="N" value="条件4: 持续 &gt; 500ms?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="540" y="860" width="280" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- O: Phase 2 编码器零位标定 (蓝色) -->
+        <mxCell id="O" value="Phase 2: 编码器零位标定&lt;br&gt;motor_hal_set_zero()&lt;br&gt;SDO 写 0x2531 = 1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="550" y="960" width="280" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- P: 记录站立霍尔基准 (绿色) -->
+        <mxCell id="P" value="记录站立霍尔基准&lt;br&gt;stand_hall_a/b/c&lt;br&gt;更新 hall_calib.bin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="550" y="1060" width="280" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Q: Phase 3 验证位置 (灰色) -->
+        <mxCell id="Q" value="Phase 3: 验证位置&lt;br&gt;轮询编码器回到 ±1°" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="550" y="1160" width="280" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- R: 判断 位置验证 (菱形, 黄色) -->
+        <mxCell id="R" value="位置在 ±1° 内?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="560" y="1240" width="260" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- S: 校准失败 (红色) -->
+        <mxCell id="S" value="校准失败&lt;br&gt;状态 = TIMEOUT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="900" y="1250" width="160" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- T: Phase 4 完成 (绿色) -->
+        <mxCell id="T" value="Phase 4: 完成&lt;br&gt;使能电机 + 启动透传&lt;br&gt;激活 RT 线程" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="550" y="1350" width="280" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- U: 结束-失败 (红色) -->
+        <mxCell id="U" value="结束&lt;br&gt;报告失败" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="900" y="1350" width="160" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- V: 结束-成功 (绿色) -->
+        <mxCell id="V" value="结束&lt;br&gt;calib_state = 2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="550" y="1460" width="280" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== 边 ==================== -->
+
+        <!-- A → B -->
+        <mxCell id="e1" edge="1" source="A" target="B" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- B → C -->
+        <mxCell id="e2" edge="1" source="B" target="C" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- C → D (否: 首次使用) -->
+        <mxCell id="e3" edge="1" source="C" target="D" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#9673a6;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+          <mxCell as="value" value="否: 首次使用" />
+        </mxCell>
+
+        <!-- C → E (是: 日常使用) -->
+        <mxCell id="e4" edge="1" source="C" target="E" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+          <mxCell as="value" value="是: 日常使用" />
+        </mxCell>
+
+        <!-- D → F -->
+        <mxCell id="e5" edge="1" source="D" target="F" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- F → G -->
+        <mxCell id="e6" edge="1" source="F" target="G" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- G → H -->
+        <mxCell id="e7" edge="1" source="G" target="H" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- H → E -->
+        <mxCell id="e8" edge="1" source="H" target="E" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="560" y="655" />
+              <mxPoint x="560" y="380" />
+              <mxPoint x="760" y="330" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- E → I -->
+        <mxCell id="e9" edge="1" source="E" target="I" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=10;exitX=0;exitY=0.5;entryX=0.5;entryY=0;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="680" y="400" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- I → J -->
+        <mxCell id="e10" edge="1" source="I" target="J" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- J → K (否) -->
+        <mxCell id="e11" edge="1" source="J" target="K" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#b85450;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+          <mxCell as="value" value="否" />
+        </mxCell>
+
+        <!-- K → I (循环) -->
+        <mxCell id="e12" edge="1" source="K" target="I" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=10;exitX=0.5;exitY=0;entryX=1;entryY=0.5;dashed=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="980" y="420" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- J → L (是) -->
+        <mxCell id="e13" edge="1" source="J" target="L" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+          <mxCell as="value" value="是" />
+        </mxCell>
+
+        <!-- L → K (否) -->
+        <mxCell id="e14" edge="1" source="L" target="K" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#b85450;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry" />
+          <mxCell as="value" value="否" />
+        </mxCell>
+
+        <!-- L → M (是) -->
+        <mxCell id="e15" edge="1" source="L" target="M" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+          <mxCell as="value" value="是" />
+        </mxCell>
+
+        <!-- M → K (否) -->
+        <mxCell id="e16" edge="1" source="M" target="K" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#b85450;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.75;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="860" y="780" />
+              <mxPoint x="860" y="548" />
+            </Array>
+          </mxGeometry>
+          <mxCell as="value" value="否" />
+        </mxCell>
+
+        <!-- M → N (是) -->
+        <mxCell id="e17" edge="1" source="M" target="N" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+          <mxCell as="value" value="是" />
+        </mxCell>
+
+        <!-- N → N (否, 自循环) -->
+        <mxCell id="e18" edge="1" source="N" target="N" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#b85450;fontSize=10;exitX=1;exitY=0.5;entryX=1;entryY=0;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="860" y="890" />
+              <mxPoint x="860" y="860" />
+            </Array>
+          </mxGeometry>
+          <mxCell as="value" value="否" />
+        </mxCell>
+
+        <!-- N → O (是) -->
+        <mxCell id="e19" edge="1" source="N" target="O" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+          <mxCell as="value" value="是" />
+        </mxCell>
+
+        <!-- O → P -->
+        <mxCell id="e20" edge="1" source="O" target="P" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- P → Q -->
+        <mxCell id="e21" edge="1" source="P" target="Q" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Q → R -->
+        <mxCell id="e22" edge="1" source="Q" target="R" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- R → S (否, 超时) -->
+        <mxCell id="e23" edge="1" source="R" target="S" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#b85450;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+          <mxCell as="value" value="否, 超时" />
+        </mxCell>
+
+        <!-- R → T (是) -->
+        <mxCell id="e24" edge="1" source="R" target="T" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+          <mxCell as="value" value="是" />
+        </mxCell>
+
+        <!-- S → U -->
+        <mxCell id="e25" edge="1" source="S" target="U" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#b85450;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- T → V -->
+        <mxCell id="e26" edge="1" source="T" target="V" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

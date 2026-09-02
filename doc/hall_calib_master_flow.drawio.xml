@@ -1,0 +1,80 @@
+<mxfile host="app.diagrams.net" agent="Beta" version="26.0.0">
+  <diagram name="总流程" id="master_flow">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- A: 系统启动 -->
+        <mxCell id="A" value="系统启动 / 按键触发校准" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="440" y="20" width="240" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- B: 判断是否已标定 -->
+        <mxCell id="B" value="hall_calib.bin 存在&lt;br&gt;且 valid = 1?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="450" y="110" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- C: 霍尔采样标定子流程 (子流程框) -->
+        <mxCell id="C" value="&lt;b&gt;子流程: 霍尔传感器采样标定&lt;/b&gt;&lt;br&gt;&lt;br&gt;1. 失能电机&lt;br&gt;2. 用户缓慢活动关节 (3~5s)&lt;br&gt;3. 采集 hall_adc0/1/2 + encoder_pos&lt;br&gt;4. 计算 offset/amplitude&lt;br&gt;5. 计算电气相位 atan2(b_norm, a_norm)&lt;br&gt;6. 建立 (angle -&gt; phase) 查找表 LUT&lt;br&gt;7. 确定站立相位区间&lt;br&gt;8. 保存 hall_calib.bin&lt;br&gt;&lt;br&gt;&lt;b&gt;输出: offset_a/b/c, amp_a/b/c,&lt;/b&gt;&lt;br&gt;&lt;b&gt;stand_phase_min/max, LUT&lt;/b&gt;" style="shape=process;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="120" y="230" width="320" height="220" as="geometry" />
+        </mxCell>
+
+        <!-- D: 零位校准子流程 (子流程框) -->
+        <mxCell id="D" value="&lt;b&gt;子流程: 零位校准&lt;/b&gt;&lt;br&gt;&lt;br&gt;1. 加载 hall_calib.bin&lt;br&gt;2. 失能电机&lt;br&gt;3. 站立检测:&lt;br&gt;   - 编码器角度在站立区间?&lt;br&gt;   - 速度 &lt; 2°/s?&lt;br&gt;   - 霍尔相位在站立区间?&lt;br&gt;   - 持续 &gt; 500ms?&lt;br&gt;4. 确认站立 -&gt; 写 0x2531=1&lt;br&gt;5. 记录站立霍尔基准&lt;br&gt;6. 验证位置 ±1°&lt;br&gt;7. 使能电机 + 启动透传&lt;br&gt;&lt;br&gt;&lt;b&gt;输出: 编码器零位标定完成&lt;/b&gt;" style="shape=process;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="620" y="230" width="340" height="280" as="geometry" />
+        </mxCell>
+
+        <!-- E: 校准完成 -->
+        <mxCell id="E" value="校准完成&lt;br&gt;calib_state = 2&lt;br&gt;RT 线程激活" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="440" y="560" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- F: 校准失败 -->
+        <mxCell id="F" value="校准失败&lt;br&gt;报告错误" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="820" y="570" width="160" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== 边 ==================== -->
+        <!-- A → B -->
+        <mxCell id="e1" edge="1" source="A" target="B" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=10;"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- B → C (否: 首次使用) -->
+        <mxCell id="e2" edge="1" source="B" target="C" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#9673a6;fontSize=10;exitX=0;exitY=0.5;entryX=0.5;entryY=0;"><mxGeometry relative="1" as="geometry" /><mxCell as="value" value="否: 首次使用" /></mxCell>
+
+        <!-- B → D (是: 日常使用) -->
+        <mxCell id="e3" edge="1" source="B" target="D" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;exitX=1;exitY=0.5;entryX=0.5;entryY=0;"><mxGeometry relative="1" as="geometry" /><mxCell as="value" value="是: 日常使用" /></mxCell>
+
+        <!-- C → D (标定完成后进入零位校准) -->
+        <mxCell id="e4" edge="1" source="C" target="D" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;"><mxGeometry relative="1" as="geometry" /><mxCell as="value" value="标定完成, 进入零位校准" /></mxCell>
+
+        <!-- D → E (成功) -->
+        <mxCell id="e5" edge="1" source="D" target="E" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;"><mxGeometry relative="1" as="geometry" /><mxCell as="value" value="成功" /></mxCell>
+
+        <!-- D → F (失败) -->
+        <mxCell id="e6" edge="1" source="D" target="F" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#b85450;fontSize=10;exitX=1;exitY=0.8;entryX=0;entryY=0.5;"><mxGeometry relative="1" as="geometry" /><mxCell as="value" value="失败/超时" /></mxCell>
+
+        <!-- 图例 -->
+        <mxCell id="legend_title" value="图例" style="text;html=1;strokeColor=none;fillColor=none;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="230" width="60" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1" value="起始/关键操作" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="260" width="140" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2" value="判断节点" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="295" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="leg3" value="霍尔标定子流程" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="345" width="140" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="leg4" value="零位校准子流程" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="380" width="140" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="leg5" value="失败路径" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="415" width="140" height="25" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
